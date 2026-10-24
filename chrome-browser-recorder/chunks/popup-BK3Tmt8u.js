@@ -1,0 +1,1 @@
+import{d as e,u as t}from"./app-DANjerXs.js";import"./_virtual_wxt-html-plugins-Dezn_h7o.js";import{n,t as r}from"./App-DZYjiHbd.js";var i=e(),a=t();(0,i.createRoot)(document.getElementById(`root`)).render((0,a.jsx)(n,{surface:`popup`,children:(0,a.jsx)(r,{})}));
