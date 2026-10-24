@@ -56,7 +56,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#ffdac5] text-[12px] font-bold text-[#8a330a]">AN</div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[12px] font-semibold">Atelier Nord</div>
-            <div className="mt-0.5 text-[10px] text-[#a5b8b0]">Spațiu demonstrativ</div>
           </div>
           <ChevronDown size={15} className="text-white/50" />
         </button>
@@ -104,8 +103,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 items-center gap-3">
             <button aria-label="Deschide meniul" onClick={() => setMobileOpen(true)} className="rounded-lg p-2 text-[#60736b] hover:bg-[#E4D3C4] lg:hidden"><Menu size={19} /></button>
             <div className="hidden items-center gap-2 text-[11px] text-[#8a9993] sm:flex"><span>Atelier Nord</span><ChevronRight size={13} /><span className="font-medium text-[#4e625a]">Helpy</span></div>
-            <div className="h-4 w-px bg-[#D6BEAA] sm:block" />
-            <span className="truncate text-[11px] font-medium text-[#61736c]">Spațiu de lucru demonstrativ</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <Link href="/search" className="hidden h-9 items-center gap-2 rounded-xl border border-[#FF5A00] bg-[#FF5A00] px-3 text-[11px] text-[#29170e] shadow-[0_1px_2px_rgba(20,40,30,.03)] transition hover:border-[#bfd9cb] sm:flex"><Search size={14} /><span>Caută cunoștințe</span><span className="ml-4 rounded border border-[#D5C0AC] px-1.5 py-0.5 text-[9px] text-[#9ca9a3]">⌘ K</span></Link>
