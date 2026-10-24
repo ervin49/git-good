@@ -12,6 +12,9 @@ function fillForm() {
   $('#format').value = s.uploadFormat;
   $('#apikey').value = s.apiKey || '';
   $('#operator').value = s.operatorLabel || '';
+  $('#auto-upload').checked = !!s.autoUpload;
+  $('#live-sync').checked = !!s.liveSync;
+  $('#dashboard').value = s.dashboardUrl || '';
   $('#value-capture').value = s.valueCapture;
   $('#selectors').value = (s.extraSelectors || []).join('\n');
   $('#indicator').checked = s.showIndicator !== false;
@@ -86,6 +89,9 @@ $('#save-upload').addEventListener('click', async () => {
       uploadFormat: $('#format').value,
       apiKey: $('#apikey').value.trim(),
       operatorLabel: $('#operator').value.trim(),
+      autoUpload: $('#auto-upload').checked,
+      liveSync: $('#live-sync').checked,
+      dashboardUrl: $('#dashboard').value.trim(),
     },
   });
   if (!m.classList.contains('err')) showMsg(m, 'Salvat.', 'ok');
@@ -109,7 +115,7 @@ function statusText(s) {
   if (s.status === 'active') return 'în curs';
   const base = s.status === 'aborted' ? 'abandonată' : 'finalizată';
   if (!s.upload) return base + ' · netrimisă';
-  return base + ' · ' + (s.upload.status === 'uploaded' ? 'trimisă' : 'upload eșuat (' + s.upload.error + ')');
+  return base + ' · ' + (s.upload.status === 'uploaded' ? (s.upload.mode === 'live' ? 'trimisă live' : 'trimisă') : 'upload eșuat (' + s.upload.error + ')');
 }
 
 function actionButton(label, fn, cls) {
@@ -160,6 +166,9 @@ function renderSessions() {
         showMsg($('#sessions-msg'), 'Salvat: ' + r.filename, 'ok');
       }),
     );
+    if (state.settings.dashboardUrl) {
+      row.append(actionButton('Dashboard', () => gg('gg:openDashboard', { id: s.id })));
+    }
     if (s.status !== 'active') {
       row.append(
         actionButton('Trimite', async () => {

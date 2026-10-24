@@ -57,10 +57,12 @@
       <div class="status"><span class="dot rec"></span><span id="rec-ticket"></span></div>
       <div><span class="big" id="rec-steps">0</span> pași capturați · <span id="rec-time"></span></div>
       <div class="hint">Se capturează doar pe: <span id="rec-allow"></span></div>
+      <div class="hint" id="rec-live" hidden>Trimitere live activă</div>
     </div>
     <div class="row" style="margin-top:12px">
       <button class="danger" id="stop">Oprește captura</button>
       <button id="abort">Renunță</button>
+      <button class="dash" data-which="active">Dashboard</button>
     </div>
   </section>
 
@@ -73,6 +75,7 @@
         <button id="export">Export JSON</button>
         <button class="primary" id="upload">Trimite la backend</button>
       </div>
+      <div class="row"><button class="dash" data-which="last">Deschide în dashboard</button></div>
     </div>
   </section>
 

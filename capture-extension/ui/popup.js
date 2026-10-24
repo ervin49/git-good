@@ -47,6 +47,7 @@ function render() {
     $('#rec-ticket').textContent = s.ticket.external_id + (s.ticket.title ? ' – ' + s.ticket.title : '');
     $('#rec-steps').textContent = s.step_count;
     $('#rec-allow').textContent = s.allowlist.join(', ');
+    $('#rec-live').hidden = !(state.settings.liveSync && state.settings.uploadFormat === 'events-batch');
     const tick = () => {
       const sec = Math.floor((Date.now() - Date.parse(s.started_at)) / 1000);
       $('#rec-time').textContent = Math.floor(sec / 60) + ' min ' + (sec % 60) + ' s';
@@ -54,6 +55,7 @@ function render() {
     tick();
     timer = setInterval(tick, 1000);
   }
+  for (const b of document.querySelectorAll('.dash')) b.hidden = !state.settings.dashboardUrl;
   const last = state.sessions.find((x) => x.status !== 'active');
   $('#last').hidden = !last || !!s;
   if (last) {
@@ -62,7 +64,7 @@ function render() {
     const up = last.upload;
     $('#last-upload').textContent = !up
       ? 'Netrimisă încă · ' + fmtDate(last.ended_at)
-      : up.status === 'uploaded' ? 'Trimisă ' + fmtDate(up.at) + (up.job_id ? ' · job ' + up.job_id : '')
+      : up.status === 'uploaded' ? 'Trimisă' + (up.mode === 'live' ? ' live ' : ' ') + fmtDate(up.at) + (up.job_id ? ' · job ' + up.job_id : '')
         : 'Upload eșuat: ' + up.error;
   }
 }
@@ -106,8 +108,11 @@ $('#start').addEventListener('click', async () => {
 
 async function stop(status) {
   try {
-    await gg('gg:stop', { status });
-    showMsg(msg, status === 'aborted' ? 'Sesiunea a fost marcată ca abandonată.' : 'Sesiunea a fost salvată local.', 'ok');
+    const s = await gg('gg:stop', { status });
+    const up = s && s.upload;
+    showMsg(msg, up && up.status === 'uploaded' ? 'Sesiunea a fost salvată și trimisă.'
+      : up ? 'Salvată local; upload eșuat: ' + up.error
+        : status === 'aborted' ? 'Sesiunea a fost marcată ca abandonată.' : 'Sesiunea a fost salvată local.', up && up.status !== 'uploaded' ? 'err' : 'ok');
     await refresh();
   } catch (e) { showMsg(msg, e.message, 'err'); }
 }
@@ -135,6 +140,13 @@ $('#upload').addEventListener('click', async () => {
   $('#upload').disabled = false;
   await refresh();
 });
+
+for (const b of document.querySelectorAll('.dash')) {
+  b.addEventListener('click', async () => {
+    const id = b.dataset.which === 'active' ? state.activeSession && state.activeSession.id : lastId();
+    try { await gg('gg:openDashboard', { id }); } catch (e) { showMsg(msg, e.message, 'err'); }
+  });
+}
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.activeSession || changes.sessions || changes.settings)) refresh();

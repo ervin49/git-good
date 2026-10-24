@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { addEvents, clearEvents, listEvents } from "@/app/lib/event-store";
-import { redactDeep } from "@/app/lib/redact";
+import { CAPTURE_DROPPED_KEYS, redactDeep } from "@/app/lib/redact";
 
 // The extension sends from a chrome-extension:// origin, so CORS must allow it.
 // For a local dev backend we allow any origin; lock this down for production.
@@ -40,13 +40,14 @@ export async function POST(request: NextRequest) {
 
   const origin = typeof body.origin === "string" ? body.origin : undefined;
   const receivedAt = new Date().toISOString();
+  const dropped = origin?.startsWith("gitgood-capture@") ? CAPTURE_DROPPED_KEYS : undefined;
 
   // Redact again server-side before storing — never trust the client.
   const entries = events.map((event) => ({
     receivedAt,
     sessionId,
     origin,
-    event: redactDeep(event),
+    event: redactDeep(event, dropped),
   }));
   addEvents(entries);
 

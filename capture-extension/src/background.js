@@ -19,6 +19,9 @@ const DEFAULT_SETTINGS = {
   extraSelectors: [],
   showIndicator: true,
   retentionDays: 7,
+  autoUpload: false, // trimite sesiunea automat la oprire
+  liveSync: false, // events-batch: trimite pașii pe măsură ce apar (pentru dashboard-ul live)
+  dashboardUrl: 'http://localhost:3000/?sessionId={sessionId}',
 };
 
 async function getSettings() {
@@ -136,6 +139,9 @@ function indexEntry(session) {
 }
 
 async function stopSession(status) {
+  const settings = await getSettings();
+  const live = liveEnabled(settings);
+  if (live) await flushLive();
   const session = await serial(async () => {
     const { activeSession } = await chrome.storage.local.get('activeSession');
     if (!activeSession) return null;
@@ -147,7 +153,14 @@ async function stopSession(status) {
     return activeSession;
   });
   await updateBadge();
-  return session;
+  if (!session) return session;
+  if (live) {
+    // Pașii au plecat deja live; trimitem doar un lot gol, cu sesiunea finalizată.
+    try { await uploadSession(session.id, { stepsFrom: session.live_sent || 0, mode: 'live' }); } catch (_) { /* starea e salvată */ }
+  } else if (settings.autoUpload && settings.endpoint) {
+    try { await uploadSession(session.id); } catch (_) { /* starea e salvată în session.upload */ }
+  }
+  return loadSession(session.id);
 }
 
 async function loadSession(id) {
@@ -222,7 +235,50 @@ async function recordStep(raw, sender) {
     steps.push(step);
     activeSession.step_count = steps.length;
     await chrome.storage.local.set({ [key]: steps, activeSession });
+    scheduleLiveFlush();
     return { ok: true, seq: step.seq };
+  });
+}
+
+// ---------- trimitere live ----------
+
+function liveEnabled(settings) {
+  return !!(settings.liveSync && settings.endpoint && settings.uploadFormat === 'events-batch');
+}
+
+let liveTimer = null;
+function scheduleLiveFlush() {
+  if (liveTimer) return;
+  liveTimer = setTimeout(() => {
+    liveTimer = null;
+    flushLive().catch(() => {});
+  }, 1500);
+}
+
+let liveInFlight = null;
+function flushLive() {
+  // Un singur lot în zbor; altfel două loturi ar putea trimite aceiași pași.
+  liveInFlight = (liveInFlight || Promise.resolve()).then(flushLiveOnce, flushLiveOnce);
+  return liveInFlight;
+}
+
+async function flushLiveOnce() {
+  const settings = await getSettings();
+  if (!liveEnabled(settings)) return;
+  const { activeSession } = await chrome.storage.local.get('activeSession');
+  if (!activeSession) return;
+  const from = activeSession.live_sent || 0;
+  if (activeSession.step_count <= from) return;
+  const payload = await buildPayload(activeSession.id);
+  const events = payload.steps.slice(from);
+  const upload = await postBody(settings, bodyFor(Object.assign({}, payload, { steps: events }), settings.uploadFormat), payload.session.id);
+  if (upload.status !== 'uploaded') return;
+  await serial(async () => {
+    const data = await chrome.storage.local.get('activeSession');
+    const s = data.activeSession;
+    if (!s || s.id !== activeSession.id) return;
+    s.live_sent = from + events.length;
+    await chrome.storage.local.set({ activeSession: s });
   });
 }
 
@@ -299,46 +355,54 @@ function bodyFor(payload, format) {
     origin: AGENT_NAME + '@' + VERSION,
     schema_version: payload.schema_version,
     session: payload.session,
-    events: payload.steps,
+    // kind/actionType/metadata.label = câmpurile pe care le afișează backend/app/page.tsx.
+    events: payload.steps.map((st) => Object.assign({}, st, {
+      kind: 'action',
+      actionType: st.type,
+      target: st.target && st.target.selector,
+      metadata: { label: st.description, ticket: payload.session.ticket.external_id },
+    })),
   };
 }
 
-async function uploadSession(id) {
-  const settings = await getSettings();
-  if (!settings.endpoint) throw new Error('Nu e setat URL-ul de upload (Setări).');
-  const session = await loadSession(id);
-  if (session && session.status === 'active') throw new Error('Oprește sesiunea înainte de upload.');
-  const payload = await buildPayload(id);
+async function postBody(settings, body, sessionId) {
   const headers = { 'Content-Type': 'application/json' };
   if (settings.uploadFormat === 'normalized') {
-    headers['Idempotency-Key'] = payload.session.id;
+    headers['Idempotency-Key'] = sessionId;
     headers['X-Capture-Schema'] = 'gitgood.capture-session/1.0';
   }
   if (settings.apiKey) {
     headers.Authorization = 'Bearer ' + settings.apiKey;
     headers.apikey = settings.apiKey;
   }
-  let upload;
   try {
-    const res = await fetch(settings.endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(bodyFor(payload, settings.uploadFormat)),
-    });
-    let body = null;
-    try { body = await res.json(); } catch (_) { /* fără JSON */ }
+    const res = await fetch(settings.endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* fără JSON */ }
     const ok = res.ok || res.status === 409;
-    upload = {
+    return {
       status: ok ? 'uploaded' : 'failed',
       http_status: res.status,
       at: new Date().toISOString(),
-      job_id: body && (body.job_id || body.jobId) || null,
-      error: ok ? null : (body && body.error) || res.statusText || 'HTTP ' + res.status,
+      job_id: data && (data.job_id || data.jobId) || null,
+      error: ok ? null : (data && data.error) || res.statusText || 'HTTP ' + res.status,
       endpoint: settings.endpoint,
     };
   } catch (e) {
-    upload = { status: 'failed', http_status: null, at: new Date().toISOString(), job_id: null, error: String(e.message || e), endpoint: settings.endpoint };
+    return { status: 'failed', http_status: null, at: new Date().toISOString(), job_id: null, error: String(e.message || e), endpoint: settings.endpoint };
   }
+}
+
+async function uploadSession(id, opts) {
+  const options = opts || {};
+  const settings = await getSettings();
+  if (!settings.endpoint) throw new Error('Nu e setat URL-ul de upload (Setări).');
+  const session = await loadSession(id);
+  if (session && session.status === 'active') throw new Error('Oprește sesiunea înainte de upload.');
+  const payload = await buildPayload(id);
+  if (options.stepsFrom) payload.steps = payload.steps.slice(options.stepsFrom);
+  const upload = await postBody(settings, bodyFor(payload, settings.uploadFormat), payload.session.id);
+  upload.mode = options.mode || 'batch';
   await serial(async () => {
     const s = await loadSession(id);
     if (s) {
@@ -383,6 +447,9 @@ async function saveSettings(patch) {
   next.extraSelectors = (next.extraSelectors || []).map((s) => String(s).trim()).filter(Boolean);
   if (!['masked', 'none'].includes(next.valueCapture)) next.valueCapture = 'masked';
   if (!['events-batch', 'normalized'].includes(next.uploadFormat)) next.uploadFormat = 'events-batch';
+  next.autoUpload = !!next.autoUpload;
+  next.liveSync = !!next.liveSync;
+  next.dashboardUrl = String(next.dashboardUrl || '').trim();
   await chrome.storage.local.set({ settings: next });
   await syncContentScripts();
   return next;
@@ -403,6 +470,14 @@ const handlers = {
   'gg:export': (msg) => exportSession(msg.id),
   'gg:upload': (msg) => uploadSession(msg.id),
   'gg:delete': (msg) => deleteSession(msg.id),
+  'gg:openDashboard': async (msg) => {
+    const settings = await getSettings();
+    if (!settings.dashboardUrl) throw new Error('Nu e setat URL-ul dashboard-ului (Setări).');
+    const url = settings.dashboardUrl.includes('{sessionId}')
+      ? settings.dashboardUrl.replace('{sessionId}', encodeURIComponent(msg.id))
+      : settings.dashboardUrl;
+    await chrome.tabs.create({ url });
+  },
   'gg:payload': (msg) => buildPayload(msg.id),
   'gg:saveSettings': (msg) => saveSettings(msg.settings),
   'gg:getState': async () => {

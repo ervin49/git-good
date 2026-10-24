@@ -20,6 +20,10 @@ const REDACTED = "[REDACTED]";
 
 const DROPPED_KEYS = new Set(["value", "requestBody", "responseBody"]);
 
+// capture-extension masks field values locally (passwords, cards, emails… are replaced
+// before they leave the browser), so for its batches `value` is kept and only re-scrubbed.
+export const CAPTURE_DROPPED_KEYS = new Set(["requestBody", "responseBody"]);
+
 function redactString(text: string): string {
   let out = text;
   for (const re of PATTERNS) {
@@ -28,13 +32,13 @@ function redactString(text: string): string {
   return out;
 }
 
-export function redactDeep(value: unknown): unknown {
+export function redactDeep(value: unknown, dropped: Set<string> = DROPPED_KEYS): unknown {
   if (typeof value === "string") return redactString(value);
-  if (Array.isArray(value)) return value.map(redactDeep);
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v, dropped));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = DROPPED_KEYS.has(k) ? "[REMOVED]" : redactDeep(v);
+      out[k] = dropped.has(k) ? "[REMOVED]" : redactDeep(v, dropped);
     }
     return out;
   }

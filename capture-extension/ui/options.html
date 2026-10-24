@@ -42,6 +42,10 @@
     </select>
     <label for="apikey">Cheie API (opțional)</label>
     <input type="password" id="apikey" autocomplete="off" placeholder="trimisă ca Authorization: Bearer …">
+    <label><input type="checkbox" id="auto-upload"> Trimite automat sesiunea când oprești captura</label>
+    <label><input type="checkbox" id="live-sync"> Trimitere live (pașii pleacă pe măsură ce apar; doar formatul events-batch)</label>
+    <label for="dashboard">URL dashboard (opțional; <code>{sessionId}</code> se înlocuiește)</label>
+    <input type="url" id="dashboard" placeholder="http://localhost:3000/?sessionId={sessionId}">
     <label for="operator">Etichetă operator (opțional)</label>
     <input type="text" id="operator" placeholder="ex. ana (nu pune email)">
     <div class="row" style="margin-top:12px"><button class="primary" id="save-upload">Salvează</button></div>

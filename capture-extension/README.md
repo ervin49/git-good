@@ -18,6 +18,20 @@ a datelor sensibile, și îi exportă / trimite la backend în schema normalizat
    **Trimite la backend**. Toate sesiunile se văd și în Setări → Sesiuni locale (previzualizare JSON,
    export, re-trimitere, ștergere).
 
+### Cu backend-ul din repo (`backend/`, Next.js)
+
+```bash
+cd backend && npm install && npm run dev
+```
+
+În Setări lasă URL-ul implicit `http://localhost:3000/api/events` (format `events-batch`). Opțiuni:
+
+- **Trimitere live**: pașii pleacă la backend la ~1,5 s după ce apar, iar dashboard-ul de pe
+  `http://localhost:3000` îi arată în timp real. La oprire se trimit doar pașii rămași (fără dubluri).
+- **Trimite automat la oprire**: toată sesiunea pleacă o singură dată, când apeși „Oprește captura”.
+- **URL dashboard** (implicit `http://localhost:3000/?sessionId={sessionId}`): butonul
+  „Deschide în dashboard” din popup și din Setări deschide pagina filtrată pe sesiune.
+
 Taburile deja deschise primesc captura automat la pornirea sesiunii; dacă tocmai ai adăugat domeniul,
 reîncarcă pagina.
 
@@ -49,9 +63,10 @@ Contractul complet: [`docs/ingest-api.md`](docs/ingest-api.md); schema JSON:
 Cheia API se trimite ca `Authorization: Bearer …` (+ `apikey` pentru Supabase). La salvare,
 extensia cere permisiune pe originea backend-ului, ca fetch-ul să nu depindă de CORS.
 
-> `backend/app/lib/redact.ts` înlocuiește orice câmp numit `value` cu `[REMOVED]`, deci în acel
-> backend valorile (deja mascate) ale pașilor se pierd. Dacă P3 are nevoie de ele, cheia trebuie
-> scoasă din `DROPPED_KEYS`.
+În formatul `events-batch`, fiecare pas are în plus `kind: "action"`, `actionType` și
+`metadata.label` (descrierea pasului), câmpurile pe care le afișează dashboard-ul din `backend/`.
+Backend-ul păstrează `value` pentru loturile cu `origin` = `gitgood-capture@…` (valorile sunt deja
+mascate în browser și sunt re-curățate pe server); pentru alte surse îl înlocuiește în continuare cu `[REMOVED]`.
 
 ## Ce se maschează (în browser, înainte de stocare și upload)
 

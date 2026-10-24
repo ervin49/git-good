@@ -26,10 +26,14 @@ export default function Home() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [live, setLive] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/events", { cache: "no-store" });
+      const sessionId = new URLSearchParams(window.location.search).get("sessionId");
+      setFilter(sessionId);
+      const url = sessionId ? `/api/events?sessionId=${encodeURIComponent(sessionId)}` : "/api/events";
+      const res = await fetch(url, { cache: "no-store" });
       const data = (await res.json()) as { events: StoredEvent[] };
       setEvents(data.events);
       setError(null);
@@ -82,6 +86,11 @@ export default function Home() {
       <div className="mt-4 flex gap-4 text-sm text-zinc-500 dark:text-zinc-400">
         <span>{events.length} events</span>
         <span>{sessions.length} session(s)</span>
+        {filter && (
+          <span>
+            session {filter.slice(0, 8)} · <a href="/" className="underline">show all</a>
+          </span>
+        )}
         {error && <span className="text-red-600 dark:text-red-400">{error}</span>}
       </div>
 

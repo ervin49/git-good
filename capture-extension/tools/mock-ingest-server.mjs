@@ -36,7 +36,7 @@ function validate(doc) {
   }
   if (!Array.isArray(steps)) errors.push('steps/events trebuie să fie array');
   else steps.forEach((s, i) => {
-    if (s.seq !== i + 1) errors.push(`steps[${i}].seq = ${s.seq}, așteptat ${i + 1}`);
+    if (i > 0 && s.seq !== steps[i - 1].seq + 1) errors.push(`steps[${i}].seq = ${s.seq} nu e consecutiv`);
     if (s.evidence_state !== 'observed') errors.push(`steps[${i}].evidence_state`);
     if (s.target?.input_type === 'password' && s.value && !String(s.value).startsWith('[REDACTED')) {
       errors.push(`steps[${i}]: parolă nemascată!`);
