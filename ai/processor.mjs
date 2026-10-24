@@ -310,7 +310,45 @@ function outputText(response) {
   }
   return parts.join("\n");
 }
+// AI_PROVIDER=openai|gemini picks the provider explicitly; otherwise OpenAI if its key is set, else Gemini.
+function aiProvider() {
+  const explicit = String(process.env.AI_PROVIDER ?? "").trim().toLowerCase();
+  if (explicit === "openai" || explicit === "gemini") return explicit;
+  if (process.env.OPENAI_API_KEY) return "openai";
+  if (process.env.GEMINI_API_KEY) return "gemini";
+  return null;
+}
+export function aiConfigured() {
+  const provider = aiProvider();
+  if (provider === "openai") return !!process.env.OPENAI_API_KEY;
+  if (provider === "gemini") return !!process.env.GEMINI_API_KEY;
+  return false;
+}
+async function callGemini({ schema, instructions, input }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Setează GEMINI_API_KEY în mediul serverului înainte de a apela AI-ul.");
+  const baseUrl = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  const response = await fetch(`${baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: instructions }] },
+      contents: [{ role: "user", parts: [{ text: JSON.stringify(input) }] }],
+      generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema }
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Gemini API ${response.status}: ${body.error?.message ?? "cererea a eșuat"}`);
+  if (body.promptFeedback?.blockReason) throw new Error(`Gemini a blocat cererea (${body.promptFeedback.blockReason}).`);
+  const candidate = body.candidates?.[0];
+  // Thinking models may return thought parts; only the answer parts hold the JSON.
+  const text = (candidate?.content?.parts ?? []).filter((part) => !part.thought).map((part) => part.text ?? "").join("");
+  if (!text) throw new Error(`Gemini nu a returnat conținut JSON (finishReason: ${candidate?.finishReason ?? "necunoscut"}).`);
+  return JSON.parse(text);
+}
 async function callStructuredModel({ name, schema, instructions, input }) {
+  if (aiProvider() === "gemini") return callGemini({ schema, instructions, input });
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("Setează OPENAI_API_KEY în mediul serverului înainte de a apela AI-ul.");
   const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -328,6 +366,27 @@ async function callStructuredModel({ name, schema, instructions, input }) {
   const text = outputText(body);
   if (!text) throw new Error("Modelul nu a returnat conținut JSON.");
   return JSON.parse(text);
+}
+// Fills fields a provider without strict schema enforcement (Gemini) may leave out.
+function normalizeDraft(draft) {
+  const d = draft && typeof draft === "object" ? draft : {};
+  for (const key of ["applicability", "prerequisites", "steps", "conditions", "exceptions", "uncertainties", "missing_information"]) {
+    if (!Array.isArray(d[key])) d[key] = [];
+  }
+  d.session_summary = typeof d.session_summary === "string" ? d.session_summary : "";
+  d.title = typeof d.title === "string" && d.title.trim() ? d.title : "Ciornă de procedură";
+  if (!d.ticket_link || typeof d.ticket_link !== "object") d.ticket_link = { ticket_id: null, match_status: "unmatched", basis: "", evidence_seq: [], evidence_sources: [] };
+  if (d.outcome === undefined) d.outcome = null;
+  d.sufficient_evidence = d.sufficient_evidence === true;
+  const fixRefs = (item) => {
+    if (!Array.isArray(item.evidence_seq)) item.evidence_seq = [];
+    if (!Array.isArray(item.evidence_sources)) item.evidence_sources = [];
+  };
+  for (const key of ["applicability", "prerequisites", "conditions", "exceptions", "steps", "uncertainties"]) d[key].forEach(fixRefs);
+  d.steps.forEach((step, index) => { if (!Number.isInteger(step.order)) step.order = index + 1; });
+  if (d.outcome) fixRefs(d.outcome);
+  fixRefs(d.ticket_link);
+  return d;
 }
 function enforceReviewBoundary(draft, validSeqs, validStepIds, ticketId, meeting = false) {
   const cleanRefs = (refs) => (refs ?? []).filter((seq) => validSeqs.has(seq));
@@ -371,11 +430,11 @@ export async function generateProcedureDraft(input) {
   if (capture.events.length === 0) return fallbackDraft(capture, "Exportul nu conține acțiuni sau erori relevante.");
   const explicitSessionTicket = capture.session.ticket_id;
   const explicitTicket = capture.ticket?.ticket_id;
-  const draft = await callStructuredModel({
+  const draft = normalizeDraft(await callStructuredModel({
     name: "nod_procedure_draft", schema: PROCEDURE_SCHEMA,
     instructions: capture.session.source === "meeting" ? SYSTEM_INSTRUCTIONS + MEETING_INSTRUCTIONS : SYSTEM_INSTRUCTIONS,
     input: { session: capture.session, ticket: capture.ticket, events: capture.events }
-  });
+  }));
   if (explicitSessionTicket && explicitTicket && explicitSessionTicket === explicitTicket) {
     draft.ticket_link = { ticket_id: explicitTicket, match_status: "matched", basis: "ID-ul explicit al tichetului din sesiune coincide cu ID-ul furnizat.", evidence_seq: [], evidence_sources: [{ source_type: "ticket", source_id: explicitTicket, seq: null }] };
   } else if (explicitSessionTicket && explicitTicket && explicitSessionTicket !== explicitTicket) {
@@ -406,6 +465,7 @@ export async function searchProcedures(query, procedures, { limit = 5 } = {}) {
     }
   });
   const ids = new Set(available.map((item) => item.procedure_id));
+  if (!Array.isArray(result.matches)) result.matches = [];
   result.matches = result.matches.filter((match) => ids.has(match.procedure_id)).slice(0, Math.max(1, limit));
   if (result.matches.length === 0) result.needs_clarification = true;
   return result;

@@ -63,7 +63,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const serverMessage = body && typeof body.error === "string" ? body.error : null;
     const message = response.status === 503 && (path.startsWith("/api/ai/") || path.endsWith("/draft"))
-      ? "AI-ul nu este configurat pe server (lipsește OPENAI_API_KEY)."
+      ? "AI-ul nu este configurat pe server (lipsește GEMINI_API_KEY sau OPENAI_API_KEY)."
       : response.status >= 500 && !serverMessage
         ? "Backend-ul nu răspunde. Pornește serverul din folderul backend."
         : serverMessage ?? `Cererea a eșuat (${response.status}).`;

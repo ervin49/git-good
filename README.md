@@ -29,7 +29,7 @@ Apoi deschide [http://localhost:3000](http://localhost:3000).
 Frontend-ul (portul 3000) trimite toate cererile `/api/*` către backend (portul 3001) prin `rewrites` din `front/next.config.ts`. Extensia de captură poate păstra deci URL-ul implicit `http://localhost:3000/api/events`.
 
 ```bash
-cd backend && OPENAI_API_KEY=... npm run dev   # http://localhost:3001
+cd backend && GEMINI_API_KEY=... npm run dev   # http://localhost:3001 (sau OPENAI_API_KEY=...)
 cd front && npm run dev                        # http://localhost:3000
 ```
 
@@ -44,7 +44,7 @@ Pentru alt backend, setează `BACKEND_URL` (ex. `BACKEND_URL=http://localhost:40
 Pagina `/meetings` importă transcrierile ședințelor din [Fireflies.ai](https://docs.fireflies.ai) (GraphQL API) și le transformă în proceduri pe pași.
 
 ```bash
-cd backend && FIREFLIES_API_KEY=... OPENAI_API_KEY=... npm run dev
+cd backend && FIREFLIES_API_KEY=... GEMINI_API_KEY=... npm run dev
 ```
 
 - **Import** (`POST /api/integrations/fireflies`, `{ days, keyword?, onlyWithTicket }`): implicit se păstrează doar ședințele în care apare un ID de tichet (ex. `FAC-1042`) în titlu, rezumat sau replici. Emailurile participanților nu se salvează (doar numărul lor), iar emailurile/token-urile spuse în ședință sunt mascate înainte de stocare în SQLite.
@@ -55,6 +55,6 @@ Demo fără cont Fireflies: `node backend/tools/mock-fireflies.mjs`, apoi porne�
 
 ## Stadiu
 
-Lista de proceduri, metricile și cazul exemplu din `/review` sunt încă date demonstrative (backend-ul nu are încă stocare pentru proceduri). Fără `OPENAI_API_KEY` pe backend, rutele AI răspund 503 și interfața afișează mesajul corespunzător.
+Lista de proceduri, metricile și cazul exemplu din `/review` sunt încă date demonstrative (backend-ul nu are încă stocare pentru proceduri). AI-ul merge cu Gemini (gratuit, `GEMINI_API_KEY` din aistudio.google.com) sau OpenAI (`OPENAI_API_KEY`); dacă sunt ambele, alegi cu `AI_PROVIDER=gemini|openai`. Cheile se pun în `backend/.env.local` (ignorat de git). Fără nicio cheie, rutele AI răspund 503 și interfața afișează mesajul corespunzător.
 
 Nu este necesară o extensie VS Code pentru a rula proiectul. Extensiile ESLint și Tailwind CSS IntelliSense sunt opționale.

@@ -1,5 +1,5 @@
 import { connection, type NextRequest, NextResponse } from "next/server";
-import { evaluateDraft, generateProcedureDraft } from "../../../../../../ai/processor.mjs";
+import { aiConfigured, evaluateDraft, generateProcedureDraft } from "../../../../../../ai/processor.mjs";
 import { getMeeting, listDrafts, meetingToCapture, saveDraft } from "@/app/lib/fireflies";
 
 type Context = { params: Promise<{ id: string }> };
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, { params }: Context) {
   const meeting = getMeeting((await params).id);
   if (!meeting) return NextResponse.json({ error: "Ședința nu există." }, { status: 404 });
   if (meeting.sentences.length === 0) return NextResponse.json({ error: "Ședința nu are transcriere." }, { status: 400 });
-  if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: "AI is not configured on the server" }, { status: 503 });
+  if (!aiConfigured()) return NextResponse.json({ error: "AI is not configured on the server" }, { status: 503 });
 
   const body = ((await request.json().catch(() => null)) ?? {}) as { ticketId?: unknown };
   const requested = typeof body.ticketId === "string" ? body.ticketId : null;

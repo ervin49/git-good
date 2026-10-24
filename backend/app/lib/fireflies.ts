@@ -141,7 +141,8 @@ function toSeconds(value: unknown): number | null {
 
 function splitList(value: unknown): string[] {
   const raw = Array.isArray(value) ? value.map(String) : String(value ?? "").split(/\n|,(?=\s*\S)/);
-  return raw.map((s) => clean(s.replace(/^[\s*\-•\d.)]+/, ""), 300)).filter(Boolean).slice(0, 50);
+  // Fireflies formats summaries as Markdown (**Name**, "- item"); keep plain text only.
+  return raw.map((s) => clean(s.replace(/\*\*|__/g, "").replace(/^[\s*\-•\d.)]+/, ""), 300)).filter(Boolean).slice(0, 50);
 }
 
 function findTickets(...texts: string[]): string[] {

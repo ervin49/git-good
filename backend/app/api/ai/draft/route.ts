@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { evaluateDraft, generateProcedureDraft } from "../../../../../ai/processor.mjs";
+import { aiConfigured, evaluateDraft, generateProcedureDraft } from "../../../../../ai/processor.mjs";
 import { listEvents } from "@/app/lib/event-store";
 
 interface DraftRequest {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (!directCapture && (!sessionId || sessionId.length > 160)) {
     return NextResponse.json({ error: "expected a valid sessionId or a capture-session.v1 document" }, { status: 400 });
   }
-  if (!process.env.OPENAI_API_KEY) {
+  if (!aiConfigured()) {
     return NextResponse.json({ error: "AI is not configured on the server" }, { status: 503 });
   }
 

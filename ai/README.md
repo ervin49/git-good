@@ -5,8 +5,11 @@ Node.js module that converts a Browser Recorder `events.json` export plus ticket
 ## Configure
 
 Set in the server process (never in extension code):
-- `OPENAI_API_KEY` — required.
-- `OPENAI_MODEL` — optional; defaults to `gpt-4.1-mini`.
+- `OPENAI_API_KEY` — OpenAI key (Responses API); `OPENAI_MODEL` optional, defaults to `gpt-4.1-mini`.
+- or `GEMINI_API_KEY` — Google Gemini key (free tier available at aistudio.google.com); `GEMINI_MODEL` optional, defaults to `gemini-3.8-flash`. Uses `generateContent` with `responseJsonSchema`.
+- `AI_PROVIDER` — optional, `openai` or `gemini`; without it OpenAI is used when its key is set, otherwise Gemini.
+
+Note: on Gemini's free tier, Google may use submitted content to improve its products. Inputs are already redacted, but use a paid tier for real customer data.
 
 ## Input
 
