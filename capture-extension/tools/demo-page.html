@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo CRM – Resetare acces</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1d2433; background: #fff; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, select, textarea { width: 100%; padding: 7px; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 8px 14px; }
+    nav a { margin-right: 12px; }
+  </style>
+</head>
+<body>
+  <nav><a href="#clienti">Clienți</a><a href="#tichete">Tichete</a><a href="/demo?client=ion.popescu@exemplu.ro&token=abc123">Link cu date sensibile</a></nav>
+  <h1>Resetare acces client</h1>
+  <p>Contact suport: suport@firma.ro, tel. 0722 123 456</p>
+  <form onsubmit="event.preventDefault(); document.getElementById('ok').hidden = false;">
+    <label for="client-name">Nume client</label>
+    <input id="client-name" name="clientName" value="">
+    <label for="client-email">Email client</label>
+    <input id="client-email" name="email" type="email">
+    <label for="phone">Telefon</label>
+    <input id="phone" name="phone" type="tel">
+    <label for="card">Număr card (test: 4111 1111 1111 1111)</label>
+    <input id="card" name="cardNumber" autocomplete="cc-number">
+    <label for="cnp">CNP</label>
+    <input id="cnp" name="cnp">
+    <label for="pwd">Parolă temporară</label>
+    <input id="pwd" name="password" type="password">
+    <label for="reason">Motiv</label>
+    <select id="reason" name="reason">
+      <option>Parolă uitată</option>
+      <option>Cont blocat</option>
+      <option>Schimbare email</option>
+    </select>
+    <label for="notes">Note (text liber – încearcă să scrii un email sau un IBAN RO49AAAA1B31007593840000)</label>
+    <textarea id="notes" name="notes"></textarea>
+    <label for="private-notes">Note interne (marcat data-gg-mask)</label>
+    <textarea id="private-notes" data-gg-mask></textarea>
+    <label><input type="checkbox" id="notify" name="notify"> Notifică clientul</label>
+    <button type="submit">Resetează accesul</button>
+  </form>
+  <p id="ok" hidden>✔ Accesul a fost resetat.</p>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <title>GitGood Capture</title>
+  <link rel="stylesheet" href="ui.css">
+  <style>
+    body { width: 340px; padding: 12px 14px 14px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    header a { color: var(--accent); text-decoration: none; font-size: 12px; }
+    .stack > * + * { margin-top: 8px; }
+    .big { font-size: 22px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GitGood Capture</h1>
+    <a href="#" id="open-options">Setări</a>
+  </header>
+
+  <div class="card" id="domain-card">
+    <div class="status"><span class="dot" id="domain-dot"></span><span id="domain-text">…</span></div>
+    <div class="row" style="margin-top:8px" id="allow-row" hidden>
+      <button id="allow-domain">Adaugă domeniul în allowlist</button>
+    </div>
+  </div>
+
+  <section id="idle" hidden>
+    <h2>Tichet</h2>
+    <label for="t-id">ID tichet *</label>
+    <input type="text" id="t-id" placeholder="ex. SUP-142" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="t-system">Sistem</label>
+        <select id="t-system">
+          <option value="jira">Jira</option>
+          <option value="servicenow">ServiceNow</option>
+          <option value="zendesk">Zendesk</option>
+          <option value="github">GitHub</option>
+          <option value="freshdesk">Freshdesk</option>
+          <option value="other">Altul</option>
+        </select>
+      </div>
+    </div>
+    <label for="t-title">Titlu (opțional)</label>
+    <input type="text" id="t-title" placeholder="ex. Resetare acces client" autocomplete="off">
+    <label for="t-url">Link tichet (opțional)</label>
+    <input type="url" id="t-url" placeholder="https://…" autocomplete="off">
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="start">Pornește captura</button>
+    </div>
+  </section>
+
+  <section id="recording" hidden>
+    <h2>Sesiune activă</h2>
+    <div class="card stack">
+      <div class="status"><span class="dot rec"></span><span id="rec-ticket"></span></div>
+      <div><span class="big" id="rec-steps">0</span> pași capturați · <span id="rec-time"></span></div>
+      <div class="hint">Se capturează doar pe: <span id="rec-allow"></span></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="danger" id="stop">Oprește captura</button>
+      <button id="abort">Renunță</button>
+    </div>
+  </section>
+
+  <section id="last" hidden>
+    <h2>Ultima sesiune</h2>
+    <div class="card stack">
+      <div><strong id="last-ticket"></strong> · <span id="last-steps"></span> pași</div>
+      <div class="hint" id="last-upload"></div>
+      <div class="row">
+        <button id="export">Export JSON</button>
+        <button class="primary" id="upload">Trimite la backend</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="msg" id="msg"></div>
+
+  <script src="../src/allowlist.js"></script>
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitgood.local/schema/capture-session.v1.schema.json",
+  "title": "GitGood capture session v1",
+  "type": "object",
+  "required": ["schema_version", "session", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "session": {
+      "type": "object",
+      "required": ["id", "ticket", "started_at", "status", "agent", "allowlist", "privacy", "step_count"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "ticket": {
+          "type": "object",
+          "required": ["external_id", "system"],
+          "additionalProperties": false,
+          "properties": {
+            "external_id": { "type": "string", "minLength": 1, "maxLength": 120 },
+            "system": { "enum": ["jira", "servicenow", "zendesk", "github", "freshdesk", "other"] },
+            "title": { "type": ["string", "null"], "maxLength": 300 },
+            "url": { "type": ["string", "null"], "maxLength": 2048 }
+          }
+        },
+        "started_at": { "type": "string", "format": "date-time" },
+        "ended_at": { "type": ["string", "null"], "format": "date-time" },
+        "status": { "enum": ["active", "completed", "aborted"] },
+        "operator": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": { "label": { "type": ["string", "null"], "maxLength": 120 } }
+        },
+        "agent": {
+          "type": "object",
+          "required": ["type", "name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "browser_extension" },
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "browser": { "type": "string" },
+            "platform": { "type": "string" }
+          }
+        },
+        "allowlist": { "type": "array", "items": { "type": "string" } },
+        "privacy": {
+          "type": "object",
+          "required": ["masking_policy", "value_capture", "masked_fields", "redactions"],
+          "additionalProperties": false,
+          "properties": {
+            "masking_policy": { "type": "string" },
+            "value_capture": { "enum": ["masked", "none"] },
+            "masked_fields": { "type": "integer", "minimum": 0 },
+            "redactions": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "step_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "seq", "ts", "type", "evidence_state", "app", "target", "value", "masked", "mask_reasons", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "seq": { "type": "integer", "minimum": 1 },
+          "ts": { "type": "string", "format": "date-time" },
+          "type": { "enum": ["navigation", "click", "input", "select", "toggle", "submit", "keypress"] },
+          "evidence_state": { "const": "observed" },
+          "app": {
+            "type": "object",
+            "required": ["domain", "url", "title"],
+            "additionalProperties": false,
+            "properties": {
+              "domain": { "type": "string" },
+              "url": { "type": "string" },
+              "title": { "type": ["string", "null"] }
+            }
+          },
+          "target": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "tag": { "type": "string" },
+              "role": { "type": ["string", "null"] },
+              "input_type": { "type": ["string", "null"] },
+              "label": { "type": ["string", "null"] },
+              "text": { "type": ["string", "null"] },
+              "selector": { "type": ["string", "null"] },
+              "name": { "type": ["string", "null"] }
+            }
+          },
+          "value": { "type": ["string", "boolean", "null"] },
+          "masked": { "type": "boolean" },
+          "mask_reasons": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

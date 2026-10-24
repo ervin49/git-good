@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitGood Capture – Setări</title>
+  <link rel="stylesheet" href="ui.css">
+  <style>
+    body { padding: 24px 16px 48px; }
+    main { max-width: 820px; margin: 0 auto; }
+    section { margin-top: 22px; }
+    pre { max-height: 360px; overflow: auto; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; }
+    td .row { flex-wrap: nowrap; }
+    td button { padding: 4px 8px; font-size: 12px; }
+    .table-wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>GitGood Capture – Setări</h1>
+  <p class="hint">Extensia capturează doar pe domeniile din allowlist, maschează datele sensibile în browser și trimite sesiunile la backend doar când apeși „Trimite”.</p>
+
+  <section>
+    <h2>Allowlist de domenii</h2>
+    <div class="chips" id="allow-chips"></div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="allow-input" placeholder="ex. crm.firma.ro, *.atlassian.net, localhost">
+      <button class="primary" id="allow-add">Adaugă</button>
+    </div>
+    <p class="hint">„firma.ro” include și subdomeniile; „*.firma.ro” doar subdomeniile. Chrome îți cere permisiunea pentru fiecare domeniu. Un chip galben = domeniu fără permisiune (click pe el ca s-o acorzi).</p>
+    <div class="msg" id="allow-msg"></div>
+  </section>
+
+  <section>
+    <h2>Upload</h2>
+    <label for="endpoint">URL endpoint</label>
+    <input type="url" id="endpoint" placeholder="http://localhost:3000/api/events">
+    <label for="format">Format payload</label>
+    <select id="format">
+      <option value="events-batch">events-batch – backend/app/api/events (Next.js, acum în repo)</option>
+      <option value="normalized">normalized – contract v1 complet (docs/ingest-api.md)</option>
+    </select>
+    <label for="apikey">Cheie API (opțional)</label>
+    <input type="password" id="apikey" autocomplete="off" placeholder="trimisă ca Authorization: Bearer …">
+    <label for="operator">Etichetă operator (opțional)</label>
+    <input type="text" id="operator" placeholder="ex. ana (nu pune email)">
+    <div class="row" style="margin-top:12px"><button class="primary" id="save-upload">Salvează</button></div>
+    <div class="msg" id="upload-msg"></div>
+  </section>
+
+  <section>
+    <h2>Confidențialitate</h2>
+    <label for="value-capture">Valori introduse în câmpuri</label>
+    <select id="value-capture">
+      <option value="masked">Captează, cu mascare (implicit)</option>
+      <option value="none">Nu captura deloc valorile</option>
+    </select>
+    <p class="hint">Întotdeauna mascate integral: parole, card/CVV, OTP, token, câmpuri email/telefon, câmpuri marcate <code>data-gg-mask</code>. În text liber se înlocuiesc emailuri, carduri (Luhn), IBAN, CNP, telefoane, JWT și chei lungi.</p>
+    <label for="selectors">Selectoare CSS suplimentare de mascat (unul pe linie)</label>
+    <textarea id="selectors" placeholder="#client-notes&#10;.customer-address input"></textarea>
+    <label><input type="checkbox" id="indicator"> Arată indicatorul „Captură activă” în pagină</label>
+    <label for="retention">Retenție locală (zile; 0 = păstrează)</label>
+    <input type="number" id="retention" min="0" max="365" style="max-width:120px">
+    <div class="row" style="margin-top:12px"><button class="primary" id="save-privacy">Salvează</button></div>
+    <div class="msg" id="privacy-msg"></div>
+  </section>
+
+  <section>
+    <h2>Sesiuni locale</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tichet</th><th>Început</th><th>Pași</th><th>Stare</th><th>Acțiuni</th></tr></thead>
+        <tbody id="sessions"></tbody>
+      </table>
+    </div>
+    <div class="msg" id="sessions-msg"></div>
+    <pre id="preview" hidden></pre>
+  </section>
+</main>
+<script src="../src/allowlist.js"></script>
+<script src="common.js"></script>
+<script src="options.js"></script>
+</body>
+</html>
