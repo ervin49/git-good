@@ -10,6 +10,7 @@ import {
   CircleHelp,
   FileCheck2,
   GraduationCap,
+  Video,
   LayoutDashboard,
   LockKeyhole,
   Menu,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/review", label: "De revizuit", icon: FileCheck2, badge: "4" },
   { href: "/procedures", label: "Proceduri", icon: BookOpenText },
   { href: "/search", label: "Căutare", icon: Search },
+  { href: "/meetings", label: "Ședințe", icon: Video },
   { href: "/roadmap", label: "Dezvoltare angajați", icon: GraduationCap },
 ];
 

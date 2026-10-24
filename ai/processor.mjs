@@ -93,6 +93,14 @@ const SYSTEM_INSTRUCTIONS = `Ești motorul AI pentru NOD, care transformă sesiu
 - Dacă statusul sesiunii este active sau aborted, trateaz-o ca incompletă și setează sufficient_evidence=false.
 Răspunde exclusiv în JSON-ul cerut, în limba română.`;
 
+// Extra rules when the input is a meeting transcript (session.source = "meeting"): every event is one
+// spoken line, not an observed UI action.
+const MEETING_INSTRUCTIONS = `
+Sursa este transcrierea unei ședințe: fiecare eveniment (actionType=utterance) este o replică spusă, cu vorbitorul în label.
+- Extrage procedura pe pași din ce descriu participanții că au făcut sau trebuie făcut; ignoră discuțiile care nu țin de proces.
+- Un pas doar povestit în ședință nu este o acțiune observată: marchează-l Deducție AI dacă e descris clar, altfel Neconfirmat. Nu folosi Observat.
+- Citează în evidence_seq replicile din care reiese fiecare pas. Nu include nume de persoane în instrucțiuni.`;
+
 function redactText(value) {
   return String(value ?? "")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
@@ -268,7 +276,8 @@ export function prepareCapture(input) {
       ticket_id: ticketId,
       application: redactText(sessionInput.application ?? metadata.title ?? storedOrigin),
       started_at: typeof sessionInput.started_at === "string" ? sessionInput.started_at : (typeof metadata.timestamp === "string" ? metadata.timestamp : null),
-      status: typeof sessionInput.status === "string" ? sessionInput.status : null
+      status: typeof sessionInput.status === "string" ? sessionInput.status : null,
+      source: sessionInput.source === "meeting" ? "meeting" : "capture"
     },
     ticket,
     events: safeEvents
@@ -304,7 +313,8 @@ function outputText(response) {
 async function callStructuredModel({ name, schema, instructions, input }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("Setează OPENAI_API_KEY în mediul serverului înainte de a apela AI-ul.");
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}/responses`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -319,7 +329,7 @@ async function callStructuredModel({ name, schema, instructions, input }) {
   if (!text) throw new Error("Modelul nu a returnat conținut JSON.");
   return JSON.parse(text);
 }
-function enforceReviewBoundary(draft, validSeqs, validStepIds, ticketId) {
+function enforceReviewBoundary(draft, validSeqs, validStepIds, ticketId, meeting = false) {
   const cleanRefs = (refs) => (refs ?? []).filter((seq) => validSeqs.has(seq));
   const cleanSources = (refs) => (refs ?? []).filter((source) => {
     if (!source || typeof source.source_id !== "string") return false;
@@ -334,6 +344,10 @@ function enforceReviewBoundary(draft, validSeqs, validStepIds, ticketId) {
     if (item.status === "Confirmat") {
       item.status = "Neconfirmat";
       item.reason = "AI-ul nu poate confirma singur; este necesară validarea unei persoane sau a unei surse autorizate.";
+    }
+    if (item.status === "Observat" && meeting && hasStepEvidence) {
+      item.status = "Deducție AI";
+      item.reason = "Pasul este descris într-o ședință, nu observat direct; trebuie confirmat de cineva.";
     }
     if (item.status === "Observat" && !hasStepEvidence) {
       item.status = "Neconfirmat";
@@ -358,7 +372,8 @@ export async function generateProcedureDraft(input) {
   const explicitSessionTicket = capture.session.ticket_id;
   const explicitTicket = capture.ticket?.ticket_id;
   const draft = await callStructuredModel({
-    name: "nod_procedure_draft", schema: PROCEDURE_SCHEMA, instructions: SYSTEM_INSTRUCTIONS,
+    name: "nod_procedure_draft", schema: PROCEDURE_SCHEMA,
+    instructions: capture.session.source === "meeting" ? SYSTEM_INSTRUCTIONS + MEETING_INSTRUCTIONS : SYSTEM_INSTRUCTIONS,
     input: { session: capture.session, ticket: capture.ticket, events: capture.events }
   });
   if (explicitSessionTicket && explicitTicket && explicitSessionTicket === explicitTicket) {
@@ -376,7 +391,7 @@ export async function generateProcedureDraft(input) {
     const note = capture.session.status === "active" ? "Sesiunea de captură este încă activă." : "Sesiunea a fost oprită înainte de finalizare.";
     if (!draft.missing_information.includes(note)) draft.missing_information.push(note);
   }
-  return enforceReviewBoundary(draft, new Set(capture.events.map((event) => event.seq)), new Set(capture.events.map((event) => event.source_id).filter(Boolean)), capture.ticket?.ticket_id ?? null);
+  return enforceReviewBoundary(draft, new Set(capture.events.map((event) => event.seq)), new Set(capture.events.map((event) => event.source_id).filter(Boolean)), capture.ticket?.ticket_id ?? null, capture.session.source === "meeting");
 }
 
 export async function searchProcedures(query, procedures, { limit = 5 } = {}) {

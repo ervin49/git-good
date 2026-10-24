@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 interface StoredEvent {
@@ -100,7 +101,7 @@ export default function Home() {
         <span>{sessions.length} session(s)</span>
         {filter && (
           <span>
-            session {filter.slice(0, 8)} · <a href="/" className="underline">show all</a>
+            session {filter.slice(0, 8)} · <Link href="/" className="underline">show all</Link>
           </span>
         )}
         {error && <span className="text-red-600 dark:text-red-400">{error}</span>}

@@ -62,7 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     const serverMessage = body && typeof body.error === "string" ? body.error : null;
-    const message = response.status === 503
+    const message = response.status === 503 && (path.startsWith("/api/ai/") || path.endsWith("/draft"))
       ? "AI-ul nu este configurat pe server (lipsește OPENAI_API_KEY)."
       : response.status >= 500 && !serverMessage
         ? "Backend-ul nu răspunde. Pornește serverul din folderul backend."
@@ -109,4 +109,51 @@ export async function addDomain(domain: string): Promise<AllowedDomain[]> {
 
 export async function removeDomain(domain: string): Promise<AllowedDomain[]> {
   return (await request<{ domains: AllowedDomain[] }>(`/api/settings/domains?domain=${encodeURIComponent(domain)}`, { method: "DELETE" })).domains;
+}
+
+export type Meeting = {
+  id: string;
+  title: string;
+  date: string;
+  duration_min: number;
+  transcript_url: string | null;
+  participant_count: number;
+  ticket_ids: string[];
+  overview: string;
+  action_items: string[];
+  keywords: string[];
+  sentence_count: number;
+  synced_at: string;
+};
+
+export type MeetingSentence = { idx: number; speaker: string; text: string; start_s: number | null; end_s: number | null };
+
+export type FirefliesStatus = { configured: boolean; last_sync: string | null; last_error: string | null; meetings: Meeting[] };
+
+export type FirefliesSyncResult = { fetched: number; stored: number; skippedNoTicket: number; meetings: Meeting[] };
+
+export function getFirefliesStatus(ticket?: string): Promise<FirefliesStatus> {
+  return request<FirefliesStatus>(`/api/integrations/fireflies${ticket ? `?ticket=${encodeURIComponent(ticket)}` : ""}`);
+}
+
+export function syncFireflies(options: { days: number; keyword?: string; onlyWithTicket: boolean }): Promise<FirefliesSyncResult> {
+  return request<FirefliesSyncResult>("/api/integrations/fireflies", { method: "POST", body: JSON.stringify(options) });
+}
+
+export async function getMeeting(id: string): Promise<Meeting & { sentences: MeetingSentence[] }> {
+  return (await request<{ meeting: Meeting & { sentences: MeetingSentence[] } }>(`/api/meetings/${encodeURIComponent(id)}`)).meeting;
+}
+
+export async function deleteMeeting(id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/meetings/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export type MeetingDraft = { ticket_id: string; draft: ProcedureDraft; quality: DraftQuality; created_at: string };
+
+export async function listMeetingDrafts(id: string): Promise<MeetingDraft[]> {
+  return (await request<{ drafts: MeetingDraft[] }>(`/api/meetings/${encodeURIComponent(id)}/draft`)).drafts;
+}
+
+export function generateMeetingDraft(id: string, ticketId?: string): Promise<MeetingDraft> {
+  return request<MeetingDraft>(`/api/meetings/${encodeURIComponent(id)}/draft`, { method: "POST", body: JSON.stringify({ ticketId }) });
 }
