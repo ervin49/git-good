@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleHelp,
   FileCheck2,
+  GraduationCap,
   LayoutDashboard,
   LockKeyhole,
   Menu,
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/review", label: "De revizuit", icon: FileCheck2, badge: "4" },
   { href: "/procedures", label: "Proceduri", icon: BookOpenText },
   { href: "/search", label: "Căutare", icon: Search },
+  { href: "/roadmap", label: "Dezvoltare angajați", icon: GraduationCap },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

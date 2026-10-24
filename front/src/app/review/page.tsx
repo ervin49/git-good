@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { LiveDraftPanel } from "@/components/live-draft-panel";
-import { ArrowLeft, ArrowUpRight, Check, CheckCheck, CircleAlert, CircleCheck, Edit3, FileText, MessageSquareText, MoreHorizontal, ShieldCheck, X, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, CheckCheck, CircleAlert, CircleCheck, Edit3, FileText, MessageSquareText, MoreHorizontal, ShieldCheck, Sparkles, X, XCircle } from "lucide-react";
 
 interface ReviewStep {
   text: string;
@@ -145,11 +145,7 @@ export default function ReviewPage() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-[#FF5A00] bg-[#E8D9CA] shadow-[0_4px_14px_rgba(61,35,19,.04)]">
-<<<<<<< HEAD
           <div className="flex flex-col justify-between gap-3 border-b border-[#DDCABB] px-5 py-4 sm:flex-row sm:items-center sm:px-6"><div><div className="flex items-center gap-2"><h2 className="text-[13px] font-semibold text-[#302016]">Procedură candidat</h2><span className="inline-flex items-center gap-1 rounded-full bg-[#f0edfa] px-2 py-1 text-[9px] font-semibold text-[#7463a5]"><Sparkles size={10}/> simulare AI · demo</span></div><p className="mt-1 text-[10px] text-[#8c9a93]">Pașii păstrează proveniența și nivelul de confirmare</p></div><span className="inline-flex items-center gap-1.5 self-start rounded-full bg-[#fff4ec] px-2.5 py-1.5 text-[9px] font-semibold text-[#c95418] sm:self-auto"><ShieldCheck size={11}/> {teamsMessages.length} mesaje demo</span></div>
-=======
-          <div className="flex flex-col justify-between gap-3 border-b border-[#DDCABB] px-5 py-4 sm:flex-row sm:items-center sm:px-6"><div><div className="flex items-center gap-2"><h2 className="text-[13px] font-semibold text-[#302016]">Procedură candidat</h2></div><p className="mt-1 text-[10px] text-[#8c9a93]">Pașii păstrează proveniența și nivelul de confirmare</p></div><span className="inline-flex items-center gap-1.5 self-start rounded-full bg-[#fff4ec] px-2.5 py-1.5 text-[9px] font-semibold text-[#c95418] sm:self-auto"><ShieldCheck size={11}/> 2 surse legate</span></div>
->>>>>>> a517775 (feat: add sqlite)
           <div className="p-5 sm:p-6">
             {editing&&<div className="mb-4 rounded-xl border border-[#f2ddd0] bg-[#F0E3D6] p-3"><label className="mb-2 block text-[9px] font-semibold uppercase tracking-[.08em] text-[#708279]">Notă de revizuire</label><textarea defaultValue="Verifică seria aferentă punctului de lucru înainte de a modifica setarea." className="min-h-[68px] w-full resize-y rounded-lg border border-[#D9C3AF] bg-[#E8D9CA] p-2.5 text-[10px] leading-5 text-[#455a4f] outline-none focus:border-[#8fbea3]"/><div className="mt-2 flex justify-end gap-2"><button onClick={()=>setEditing(false)} className="rounded-lg px-3 py-1.5 text-[9px] font-semibold text-[#7a8a82] hover:bg-[#fff3eb]">Renunță</button><button onClick={()=>{setEditing(false);notify("Modificarea a fost salvată în demo.")}} className="rounded-lg bg-[#fff0e7] px-3 py-1.5 text-[9px] font-semibold text-[#d85415]">Salvează nota</button></div></div>}
             <div className="space-y-1">
