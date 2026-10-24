@@ -163,9 +163,11 @@ async function fetchPage(apiKey: string, variables: Record<string, unknown>): Pr
     throw new FirefliesError("Fireflies nu răspunde.", 502);
   }
   const body = (await response.json().catch(() => null)) as
-    | { data?: { transcripts?: FirefliesTranscript[] | null }; errors?: { message?: string }[] }
+    | { data?: { transcripts?: FirefliesTranscript[] | null }; errors?: { message?: string; code?: string; extensions?: { code?: string } }[] }
     | null;
-  if (response.status === 401 || response.status === 403) throw new FirefliesError("Cheia Fireflies este invalidă.", 401);
+  // Fireflies answers a bad key with HTTP 500 + code "auth_failed", not 401.
+  const authFailed = body?.errors?.some((e) => e.code === "auth_failed" || e.extensions?.code === "auth_failed");
+  if (authFailed || response.status === 401 || response.status === 403) throw new FirefliesError("Cheia Fireflies este invalidă.", 401);
   if (!response.ok || !body) throw new FirefliesError(`Fireflies a răspuns cu ${response.status}.`, 502);
   if (body.errors?.length) throw new FirefliesError(`Fireflies: ${body.errors[0]?.message ?? "eroare GraphQL"}`, 502);
   return body.data?.transcripts ?? [];

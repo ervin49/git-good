@@ -60,7 +60,10 @@ createServer(async (req, res) => {
     res.end(JSON.stringify(body));
   };
   if (req.method !== "POST" || !req.url.startsWith("/graphql")) return send(404, { error: "not found" });
-  if (!/^Bearer \S+/.test(req.headers.authorization ?? "")) return send(401, { errors: [{ message: "Unauthorized" }] });
+  // Like the real API: a bad key gets HTTP 500 with code "auth_failed". The mock accepts only "demo".
+  if (req.headers.authorization !== "Bearer demo") {
+    return send(500, { errors: [{ code: "auth_failed", message: "An error occurred while authenticating your request.", extensions: { code: "auth_failed" } }] });
+  }
   const { variables = {} } = JSON.parse(raw || "{}");
   const from = variables.fromDate ? Date.parse(variables.fromDate) : 0;
   const keyword = (variables.keyword ?? "").toLowerCase();
