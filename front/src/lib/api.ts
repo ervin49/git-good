@@ -157,3 +157,25 @@ export async function listMeetingDrafts(id: string): Promise<MeetingDraft[]> {
 export function generateMeetingDraft(id: string, ticketId?: string): Promise<MeetingDraft> {
   return request<MeetingDraft>(`/api/meetings/${encodeURIComponent(id)}/draft`, { method: "POST", body: JSON.stringify({ ticketId }) });
 }
+
+export type NotificationKind = "capture" | "capture_done" | "meeting" | "draft" | "error";
+
+export type AppNotification = {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  href: string | null;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type NotificationList = { notifications: AppNotification[]; unread: number };
+
+export function listNotifications(): Promise<NotificationList> {
+  return request<NotificationList>("/api/notifications");
+}
+
+export function markNotificationsRead(id?: string): Promise<NotificationList> {
+  return request<NotificationList>("/api/notifications", { method: "POST", body: JSON.stringify({ id }) });
+}

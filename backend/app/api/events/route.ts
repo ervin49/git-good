@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { addEvents, clearEvents, listEvents, listRequests, logRequest } from "@/app/lib/event-store";
+import { notifyCaptureBatch } from "@/app/lib/notifications";
 import { CAPTURE_DROPPED_KEYS, redactDeep } from "@/app/lib/redact";
 
 // The extension sends from a chrome-extension:// origin, so CORS must allow it.
@@ -15,6 +16,7 @@ interface IncomingBatch {
   sentAt?: unknown;
   origin?: unknown;
   events?: unknown;
+  session?: unknown;
 }
 
 export async function OPTIONS() {
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
   }));
   addEvents(entries);
   logRequest({ at: receivedAt, method: "POST", status: 200, sessionId, origin, eventCount: entries.length });
+  notifyCaptureBatch(sessionId, body.session, entries.map((entry) => entry.event));
 
   return NextResponse.json({ ok: true, stored: entries.length }, { headers: CORS_HEADERS });
 }

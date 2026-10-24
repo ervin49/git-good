@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { NotificationBell } from "@/components/notification-bell";
 import {
   BookOpenText,
   ChevronDown,
@@ -18,7 +19,6 @@ import {
   Settings2,
   ShieldCheck,
   X,
-  Bell,
 } from "lucide-react";
 
 const navItems = [
@@ -110,7 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2 sm:gap-3">
             <Link href="/search" className="hidden h-9 items-center gap-2 rounded-xl border border-[#FF5A00] bg-[#FF5A00] px-3 text-[11px] text-[#29170e] shadow-[0_1px_2px_rgba(20,40,30,.03)] transition hover:border-[#bfd9cb] sm:flex"><Search size={14} /><span>Caută cunoștințe</span><span className="ml-4 rounded border border-[#D5C0AC] px-1.5 py-0.5 text-[9px] text-[#9ca9a3]">⌘ K</span></Link>
             <Link href="/search" aria-label="Caută" className="grid h-9 w-9 place-items-center rounded-xl border border-[#FF5A00] bg-[#FF5A00] text-[#29170e] sm:hidden"><Search size={15} /></Link>
-            <button aria-label="Notificări" className="relative grid h-9 w-9 place-items-center rounded-xl border border-[#FF5A00] bg-[#FF5A00] text-[#29170e] hover:bg-[#e94c00]"><Bell size={15} /><span className="absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full bg-[#d47f4f] ring-2 ring-white" /></button>
+            <NotificationBell />
             <div className="ml-1 hidden h-8 w-8 place-items-center rounded-full bg-[#d7c6a2] text-[10px] font-bold text-[#443b2f] sm:grid">AM</div>
           </div>
         </header>

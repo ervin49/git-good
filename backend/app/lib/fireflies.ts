@@ -2,6 +2,7 @@
 // meetings tied to a ticket (unless told otherwise). The API key stays server-side (FIREFLIES_API_KEY).
 // Docs: https://docs.fireflies.ai/graphql-api/query/transcripts
 import { db } from "@/app/lib/db";
+import { notify } from "@/app/lib/notifications";
 import { redactDeep } from "@/app/lib/redact";
 
 const API_URL = process.env.FIREFLIES_API_URL ?? "https://api.fireflies.ai/graphql";
@@ -259,13 +260,25 @@ export async function syncFireflies(options: SyncOptions): Promise<SyncResult> {
           result.skippedNoTicket++;
           continue;
         }
+        const isNew = !db.prepare("SELECT 1 FROM meetings WHERE id = ?").get(t.id);
         store(t, ticketIds, syncedAt);
         storedIds.push(t.id);
+        if (isNew) {
+          notify({
+            id: `meeting:${t.id}`,
+            kind: "meeting",
+            title: `Ședință nouă din Fireflies: ${clean(t.title, 120) || "fără titlu"}`,
+            body: ticketIds.length ? `Legată de ${ticketIds.join(", ")}. Poți genera procedura.` : "Fără tichet asociat.",
+            href: "/meetings",
+          });
+        }
       }
       if (batch.length < PAGE_SIZE) break;
     }
   } catch (error) {
-    setState(null, error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    setState(null, message);
+    notify({ id: "fireflies-error", kind: "error", title: "Importul din Fireflies a eșuat", body: message, href: "/meetings" }, true);
     throw error;
   }
   setState(syncedAt, null);

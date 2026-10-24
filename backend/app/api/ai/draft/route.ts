@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiConfigured, evaluateDraft, generateProcedureDraft } from "../../../../../ai/processor.mjs";
 import { listEvents } from "@/app/lib/event-store";
+import { notify } from "@/app/lib/notifications";
 
 interface DraftRequest {
   sessionId?: unknown;
@@ -91,6 +92,16 @@ export async function POST(request: Request) {
   try {
     const draft = await generateProcedureDraft(input);
     const quality = evaluateDraft(draft, knownEvents);
+    const draftSession = sessionId || (directCapture && isRecord(directCapture.session) && typeof directCapture.session.id === "string" ? directCapture.session.id : "");
+    if (draftSession) {
+      notify({
+        id: `draft:capture:${draftSession}`,
+        kind: "draft",
+        title: `Ciornă de procedură generată: ${draft.title.slice(0, 100)}`,
+        body: `${draft.steps.length} pași · de revizuit înainte de publicare.`,
+        href: sessionId ? `/review?sessionId=${encodeURIComponent(sessionId)}` : "/review",
+      }, true);
+    }
     return NextResponse.json({ draft, quality, truncated });
   } catch {
     return NextResponse.json({ error: "AI draft generation failed" }, { status: 502 });

@@ -1,6 +1,7 @@
 import { connection, type NextRequest, NextResponse } from "next/server";
 import { aiConfigured, evaluateDraft, generateProcedureDraft } from "../../../../../../ai/processor.mjs";
 import { getMeeting, listDrafts, meetingToCapture, saveDraft } from "@/app/lib/fireflies";
+import { notify } from "@/app/lib/notifications";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -28,6 +29,13 @@ export async function POST(request: NextRequest, { params }: Context) {
     const draft = await generateProcedureDraft(capture);
     const quality = evaluateDraft(draft, capture.steps);
     const stored = saveDraft(meeting.id, ticketId, draft, quality);
+    notify({
+      id: `draft:meeting:${meeting.id}`,
+      kind: "draft",
+      title: `Procedură generată din ședința „${meeting.title.slice(0, 80)}”`,
+      body: `${draft.steps.length} pași${ticketId ? ` · ${ticketId}` : ""} · de revizuit înainte de publicare.`,
+      href: "/meetings",
+    }, true);
     return NextResponse.json({ ...stored, truncated: meeting.sentences.length > capture.steps.length });
   } catch (error) {
     // Surface the provider's reason (e.g. "OpenAI API 429: no credits"), never anything that looks like a key.
