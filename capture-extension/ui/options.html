@@ -26,8 +26,9 @@
     <div class="row" style="margin-top:10px">
       <input type="text" id="allow-input" placeholder="ex. crm.firma.ro, *.atlassian.net, localhost">
       <button class="primary" id="allow-add">Adaugă</button>
+      <button id="grant-all" hidden>Acordă permisiunile lipsă</button>
     </div>
-    <p class="hint">„firma.ro” include și subdomeniile; „*.firma.ro” doar subdomeniile. Chrome îți cere permisiunea pentru fiecare domeniu. Un chip galben = domeniu fără permisiune (click pe el ca s-o acorzi).</p>
+    <p class="hint">Lista vine din baza de date a backend-ului (aceeași cu pagina „Surse și confidențialitate”) și se sincronizează la fiecare minut. „firma.ro” include și subdomeniile; „*.firma.ro” doar subdomeniile. Chrome îți cere permisiunea pentru fiecare domeniu. Un chip galben = domeniu fără permisiune (click pe el ca s-o acorzi).</p>
     <label><input type="checkbox" id="auto-capture"> Captură automată: pornește singură o sesiune când lucrezi pe un domeniu din allowlist</label>
     <label for="auto-idle">Închide sesiunea automată după (minute fără activitate)</label>
     <input type="number" id="auto-idle" min="1" max="240" style="max-width:120px">

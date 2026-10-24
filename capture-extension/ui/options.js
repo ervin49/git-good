@@ -1,8 +1,14 @@
 let state = null;
+let missingPermissions = [];
 
 async function refresh() {
   state = await gg('gg:getState');
   await renderAllowlist();
+  missingPermissions = [];
+  for (const entry of state.settings.allowlist) {
+    if (!(await chrome.permissions.contains({ origins: GGAllowlist.matchPatterns(entry) }))) missingPermissions.push(entry);
+  }
+  $('#grant-all').hidden = !missingPermissions.length;
   renderSessions();
 }
 
@@ -48,8 +54,11 @@ async function renderAllowlist() {
     rm.textContent = '×';
     rm.title = 'Elimină';
     rm.addEventListener('click', async () => {
-      const list = state.settings.allowlist.filter((x) => x !== entry);
-      await gg('gg:saveSettings', { settings: { allowlist: list } });
+      try {
+        await gg('gg:removeDomain', { entry });
+      } catch (e) {
+        return showMsg($('#allow-msg'), e.message, 'err');
+      }
       try { await chrome.permissions.remove({ origins: GGAllowlist.matchPatterns(entry) }); } catch (_) { /* ignore */ }
       await refresh();
     });
@@ -64,9 +73,25 @@ $('#allow-add').addEventListener('click', async () => {
   if (!entries.length) return showMsg(m, 'Domeniu invalid.', 'err');
   const granted = await chrome.permissions.request({ origins: entries.flatMap(GGAllowlist.matchPatterns) });
   if (!granted) return showMsg(m, 'Permisiunea a fost refuzată; domeniul nu a fost adăugat.', 'err');
-  await gg('gg:saveSettings', { settings: { allowlist: state.settings.allowlist.concat(entries) } });
+  try {
+    await gg('gg:addDomains', { entries });
+  } catch (e) {
+    return showMsg(m, e.message, 'err');
+  }
   $('#allow-input').value = '';
-  showMsg(m, 'Adăugat: ' + entries.join(', ') + '. Reîncarcă taburile deja deschise.', 'ok');
+  showMsg(m, 'Salvat în baza de date: ' + entries.join(', ') + '.', 'ok');
+  await refresh();
+});
+
+// Domeniile venite din baza de date n-au încă permisiune; Chrome o acordă doar după un click.
+// Lista e calculată în refresh(): cererea de permisiune trebuie să fie primul apel async din click.
+$('#grant-all').addEventListener('click', async () => {
+  const missing = missingPermissions.slice();
+  if (!missing.length) return;
+  const ok = await chrome.permissions.request({ origins: missing.flatMap(GGAllowlist.matchPatterns) });
+  showMsg($('#allow-msg'), ok ? 'Permisiune acordată pentru: ' + missing.join(', ') : 'Permisiunea a fost refuzată.', ok ? 'ok' : 'err');
+  // Re-salvarea înregistrează content script-ul și pornește captura pe taburile deschise.
+  if (ok) await gg('gg:saveSettings', { settings: {} });
   await refresh();
 });
 
@@ -200,7 +225,10 @@ function renderSessions() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.sessions || changes.activeSession)) refresh();
+  if (area === 'local' && (changes.sessions || changes.activeSession || changes.settings)) refresh();
 });
 
-refresh().then(fillForm);
+gg('gg:syncDomains')
+  .catch((e) => showMsg($('#allow-msg'), 'Nu am putut citi domeniile din baza de date: ' + e.message, 'err'))
+  .then(refresh)
+  .then(fillForm);

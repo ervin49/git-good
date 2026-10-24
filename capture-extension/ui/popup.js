@@ -27,19 +27,29 @@ function tabHost() {
   }
 }
 
-function renderDomain() {
-  const host = tab && tabHost();
-  const allowed = host && GGAllowlist.hostAllowed(host, state.settings.allowlist);
-  $('#domain-dot').className = 'dot ' + (allowed ? 'ok' : 'warn');
-  $('#domain-text').textContent = !host
-    ? 'Pagina curentă nu poate fi capturată'
-    : allowed ? host + ' e în allowlist' : host + ' nu e în allowlist – nu se capturează aici';
-  $('#allow-row').hidden = !host || !!allowed;
+// Intrarea din allowlist care acoperă host-ul curent (pentru cererea de permisiune).
+function matchingEntry(host) {
+  return state.settings.allowlist.find((e) => GGAllowlist.hostAllowed(host, [e])) || null;
 }
 
-function render() {
+let granted = true;
+async function renderDomain() {
+  const host = tab && tabHost();
+  const entry = host && matchingEntry(host);
+  granted = !entry || await chrome.permissions.contains({ origins: GGAllowlist.matchPatterns(entry) });
+  const ok = entry && granted;
+  $('#domain-dot').className = 'dot ' + (ok ? 'ok' : 'warn');
+  $('#domain-text').textContent = !host
+    ? 'Pagina curentă nu poate fi capturată'
+    : !entry ? host + ' nu e în allowlist – nu se capturează aici'
+      : granted ? host + ' e în allowlist' : host + ' e în allowlist, dar lipsește permisiunea Chrome';
+  $('#allow-row').hidden = !host || !!ok;
+  $('#allow-domain').textContent = entry ? 'Acordă permisiunea pentru ' + entry : 'Adaugă domeniul în allowlist';
+}
+
+async function render() {
   const s = state.activeSession;
-  renderDomain();
+  await renderDomain();
   $('#idle').hidden = !!s;
   $('#auto-hint').hidden = !state.settings.autoCapture;
   $('#recording').hidden = !s;
@@ -72,7 +82,7 @@ function render() {
 
 async function refresh() {
   state = await gg('gg:getState');
-  render();
+  await render();
 }
 
 $('#open-options').addEventListener('click', (e) => {
@@ -83,11 +93,14 @@ $('#open-options').addEventListener('click', (e) => {
 $('#allow-domain').addEventListener('click', async () => {
   const host = tabHost();
   // Cererea de permisiune trebuie să fie primul apel async din click.
-  const granted = await requestDomainPermission(host);
-  if (!granted) return showMsg(msg, 'Permisiunea pentru ' + host + ' a fost refuzată.', 'err');
+  const entry = matchingEntry(host) || host;
+  const ok = await requestDomainPermission(entry);
+  if (!ok) return showMsg(msg, 'Permisiunea pentru ' + entry + ' a fost refuzată.', 'err');
   try {
-    await gg('gg:saveSettings', { settings: { allowlist: state.settings.allowlist.concat(host) } });
-    showMsg(msg, host + ' a fost adăugat. Reîncarcă pagina dacă e deja deschisă.', 'ok');
+    if (!matchingEntry(host)) await gg('gg:addDomains', { entries: [host] });
+    // Re-salvarea înregistrează content script-ul și pornește captura pe tabul deschis.
+    else await gg('gg:saveSettings', { settings: {} });
+    showMsg(msg, entry + ' e activ. Captura pornește pe pagina deschisă.', 'ok');
     await refresh();
   } catch (e) { showMsg(msg, e.message, 'err'); }
 });
@@ -156,5 +169,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 (async () => {
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await refresh();
+  try { await gg('gg:syncDomains'); } catch (_) { /* backend oprit: rămâne lista locală */ }
   guessTicket(tab);
 })();

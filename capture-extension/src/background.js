@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const IDLE_ALARM = 'gg-auto-idle';
+const DOMAINS_ALARM = 'gg-domains-sync';
 const TICKET_RE = /\b([A-Z][A-Z0-9]{1,9}-\d{1,7})\b/;
 
 async function getSettings() {
@@ -97,6 +98,66 @@ async function injectIntoOpenTabs() {
       });
     } catch (_) { /* fără permisiune pentru tab sau pagină specială */ }
   }
+}
+
+// ---------- allowlist din baza de date (backend /api/settings/domains) ----------
+
+// Aceeași origine ca endpoint-ul de upload (frontend-ul face proxy pe /api către backend).
+function domainsUrl(settings) {
+  try { return new URL('/api/settings/domains', settings.endpoint).href; } catch (_) { return null; }
+}
+
+async function domainsRequest(settings, method, body, query) {
+  const base = domainsUrl(settings);
+  if (!base) throw new Error('Nu e setat URL-ul backend-ului (Setări → Upload).');
+  let res;
+  try {
+    res = await fetch(base + (query || ''), {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (_) {
+    throw new Error('Backend-ul nu răspunde la ' + base);
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok && res.status !== 409) throw new Error((data && data.error) || 'HTTP ' + res.status);
+  return data;
+}
+
+// Lista din baza de date înlocuiește allowlist-ul local; salvăm doar dacă s-a schimbat.
+async function pullDomains() {
+  const settings = await getSettings();
+  // Prima sincronizare: urcăm domeniile puse deja în extensie, ca să nu le pierdem.
+  const { domainsSeeded } = await chrome.storage.local.get('domainsSeeded');
+  if (!domainsSeeded) {
+    for (const entry of settings.allowlist) {
+      await domainsRequest(settings, 'POST', { domain: entry }).catch(() => {});
+    }
+    await chrome.storage.local.set({ domainsSeeded: true });
+  }
+  const data = await domainsRequest(settings, 'GET');
+  const list = normalizeList((data && data.domains || []).map((d) => d.domain));
+  const same = list.length === settings.allowlist.length && list.every((d, i) => d === settings.allowlist[i]);
+  if (!same) await saveSettings({ allowlist: list });
+  return list;
+}
+
+async function addDomains(entries) {
+  const settings = await getSettings();
+  for (const entry of normalizeList(entries)) await domainsRequest(settings, 'POST', { domain: entry });
+  return pullDomains();
+}
+
+async function removeDomainEntry(entry) {
+  const settings = await getSettings();
+  await domainsRequest(settings, 'DELETE', null, '?domain=' + encodeURIComponent(entry));
+  return pullDomains();
+}
+
+async function scheduleDomainsSync() {
+  await chrome.alarms.create(DOMAINS_ALARM, { periodInMinutes: 1 });
+  pullDomains().catch((e) => console.warn('[gitgood] sincronizare domenii eșuată', e));
 }
 
 // ---------- sesiuni ----------
@@ -579,6 +640,9 @@ const handlers = {
   },
   'gg:payload': (msg) => buildPayload(msg.id),
   'gg:saveSettings': (msg) => saveSettings(msg.settings),
+  'gg:syncDomains': () => pullDomains(),
+  'gg:addDomains': (msg) => addDomains(msg.entries),
+  'gg:removeDomain': (msg) => removeDomainEntry(msg.entry),
   'gg:getState': async () => {
     const { activeSession } = await chrome.storage.local.get('activeSession');
     return { settings: await getSettings(), activeSession: activeSession || null, sessions: await getIndex() };
@@ -600,6 +664,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === IDLE_ALARM) closeIdleAutoSession().catch(() => {});
+  if (alarm.name === DOMAINS_ALARM) pullDomains().catch(() => {});
 });
 
 chrome.permissions.onAdded.addListener(() => syncContentScripts());
@@ -612,10 +677,12 @@ chrome.runtime.onInstalled.addListener(async () => {
   await injectIntoOpenTabs();
   await updateBadge();
   await applyRetention();
+  await scheduleDomainsSync();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await syncContentScripts();
   await updateBadge();
   await applyRetention();
+  await scheduleDomainsSync();
 });

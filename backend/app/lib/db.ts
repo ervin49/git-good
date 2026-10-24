@@ -28,10 +28,11 @@ export interface AllowedDomain {
   created_at: string;
 }
 
-// Accepts "app.firma.ro", "*.firma.ro", "localhost" or a pasted URL; returns the bare host or null.
+// Accepts "app.firma.ro", "*.firma.ro", "localhost", an IPv4 or a pasted URL; returns the bare host or null.
+// Keep in sync with capture-extension/src/allowlist.js, which reads this list.
 export function normalizeDomain(raw: unknown): string | null {
   const host = String(raw ?? "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "").split(/[/?#:]/)[0];
-  if (host === "localhost") return host;
+  if (host === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host;
   return /^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/.test(host) ? host : null;
 }
 
