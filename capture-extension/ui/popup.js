@@ -41,6 +41,7 @@ function render() {
   const s = state.activeSession;
   renderDomain();
   $('#idle').hidden = !!s;
+  $('#auto-hint').hidden = !state.settings.autoCapture;
   $('#recording').hidden = !s;
   clearInterval(timer);
   if (s) {

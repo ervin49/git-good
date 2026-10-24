@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { addEvents, clearEvents, listEvents } from "@/app/lib/event-store";
+import { addEvents, clearEvents, listEvents, listRequests, logRequest } from "@/app/lib/event-store";
 import { CAPTURE_DROPPED_KEYS, redactDeep } from "@/app/lib/redact";
 
 // The extension sends from a chrome-extension:// origin, so CORS must allow it.
@@ -26,12 +26,22 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as IncomingBatch;
   } catch {
+    logRequest({ at: new Date().toISOString(), method: "POST", status: 400, sessionId: null, eventCount: 0, error: "invalid JSON" });
     return NextResponse.json({ error: "invalid JSON" }, { status: 400, headers: CORS_HEADERS });
   }
 
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
   const events = Array.isArray(body.events) ? body.events : null;
   if (!sessionId || !events) {
+    logRequest({
+      at: new Date().toISOString(),
+      method: "POST",
+      status: 400,
+      sessionId,
+      origin: typeof body.origin === "string" ? body.origin : undefined,
+      eventCount: 0,
+      error: "missing sessionId or events",
+    });
     return NextResponse.json(
       { error: "expected { sessionId: string, events: array }" },
       { status: 400, headers: CORS_HEADERS }
@@ -50,16 +60,18 @@ export async function POST(request: NextRequest) {
     event: redactDeep(event, dropped),
   }));
   addEvents(entries);
+  logRequest({ at: receivedAt, method: "POST", status: 200, sessionId, origin, eventCount: entries.length });
 
   return NextResponse.json({ ok: true, stored: entries.length }, { headers: CORS_HEADERS });
 }
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId") ?? undefined;
-  return NextResponse.json({ events: listEvents(sessionId) }, { headers: CORS_HEADERS });
+  return NextResponse.json({ events: listEvents(sessionId), requests: listRequests() }, { headers: CORS_HEADERS });
 }
 
 export async function DELETE() {
   clearEvents();
+  logRequest({ at: new Date().toISOString(), method: "DELETE", status: 200, sessionId: null, eventCount: 0 });
   return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
 }

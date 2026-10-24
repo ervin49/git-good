@@ -21,7 +21,7 @@
   "background": {
     "service_worker": "src/background.js"
   },
-  "permissions": ["storage", "unlimitedStorage", "scripting", "downloads", "activeTab"],
+  "permissions": ["storage", "unlimitedStorage", "scripting", "downloads", "activeTab", "alarms"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "minimum_chrome_version": "110"
 }

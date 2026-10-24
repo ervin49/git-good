@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
+import { SessionBanner } from "@/components/session-banner";
 import { cases, procedures } from "@/lib/mock-data";
 import {
   ArrowRight, ArrowUpRight, BookOpenCheck, CheckCircle2, Clock3,
@@ -26,6 +28,7 @@ function MetricCard({ item }: { item: (typeof metrics)[number] }) {
 export default function Home() {
   return <AppShell>
     <div className="space-y-7">
+      <Suspense fallback={null}><SessionBanner /></Suspense>
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div><div className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#ff5a00]">SPAȚIU DEMONSTRATIV · MEMORIA ECHIPEI</div><h1 className="text-[27px] font-semibold tracking-[-0.045em] text-[#2a170e] sm:text-[32px]">Memoria echipei, la zi.</h1><p className="mt-2 max-w-[600px] text-[13px] leading-6 text-[#788881]">Rezolvările bune merită păstrate. Revizuiește ce a învățat Helpy și transformă experiența în proceduri utile.</p></div>
         <Link href="/review" className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-[#ff5a00] px-4 text-[11px] font-semibold text-[#29170e] shadow-[0_5px_12px_rgba(255,90,0,.2)] transition hover:bg-[#e94c00] sm:self-auto">Revizuiește 4 cazuri <ArrowRight size={14} /></Link>

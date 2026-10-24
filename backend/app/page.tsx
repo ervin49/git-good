@@ -22,8 +22,19 @@ function summarize(event: Record<string, unknown>): string {
   return kind ?? JSON.stringify(event).slice(0, 80);
 }
 
+interface RequestLogEntry {
+  at: string;
+  method: string;
+  status: number;
+  sessionId: string | null;
+  origin?: string;
+  eventCount: number;
+  error?: string;
+}
+
 export default function Home() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
+  const [requests, setRequests] = useState<RequestLogEntry[]>([]);
   const [live, setLive] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
@@ -34,8 +45,9 @@ export default function Home() {
       setFilter(sessionId);
       const url = sessionId ? `/api/events?sessionId=${encodeURIComponent(sessionId)}` : "/api/events";
       const res = await fetch(url, { cache: "no-store" });
-      const data = (await res.json()) as { events: StoredEvent[] };
+      const data = (await res.json()) as { events: StoredEvent[]; requests?: RequestLogEntry[] };
       setEvents(data.events);
+      setRequests(data.requests ?? []);
       setError(null);
     } catch {
       setError("Could not reach /api/events");
@@ -94,7 +106,47 @@ export default function Home() {
         {error && <span className="text-red-600 dark:text-red-400">{error}</span>}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-black/10 dark:border-white/10">
+      <h2 className="mt-6 text-sm font-semibold">Requests (debug)</h2>
+      <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-black/10 dark:border-white/10">
+        <table className="w-full text-sm">
+          <thead className="bg-black/[.03] dark:bg-white/[.04] text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium">Time</th>
+              <th className="px-3 py-2 font-medium">Method</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Session</th>
+              <th className="px-3 py-2 font-medium">Events</th>
+              <th className="px-3 py-2 font-medium">Origin / error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {requests.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">
+                  No POST/DELETE requests received yet.
+                </td>
+              </tr>
+            )}
+            {[...requests].reverse().map((r, i) => (
+              <tr key={i} className="border-t border-black/5 dark:border-white/5">
+                <td className="px-3 py-1.5 tabular-nums text-zinc-500 whitespace-nowrap">
+                  {new Date(r.at).toLocaleTimeString()}
+                </td>
+                <td className="px-3 py-1.5 font-mono text-xs">{r.method}</td>
+                <td className={`px-3 py-1.5 font-mono text-xs ${r.status >= 400 ? "text-red-600 dark:text-red-400" : ""}`}>
+                  {r.status}
+                </td>
+                <td className="px-3 py-1.5 font-mono text-xs">{r.sessionId ? r.sessionId.slice(0, 8) : "—"}</td>
+                <td className="px-3 py-1.5 tabular-nums text-xs">{r.eventCount}</td>
+                <td className="px-3 py-1.5 text-xs text-zinc-500">{r.error ?? r.origin ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="mt-6 text-sm font-semibold">Events</h2>
+      <div className="mt-2 overflow-hidden rounded-lg border border-black/10 dark:border-white/10">
         <table className="w-full text-sm">
           <thead className="bg-black/[.03] dark:bg-white/[.04] text-left">
             <tr>

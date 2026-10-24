@@ -22,7 +22,12 @@ const DEFAULT_SETTINGS = {
   autoUpload: false, // trimite sesiunea automat la oprire
   liveSync: false, // events-batch: trimite pașii pe măsură ce apar (pentru dashboard-ul live)
   dashboardUrl: 'http://localhost:3000/?sessionId={sessionId}',
+  autoCapture: true, // pornește singură o sesiune la primul pas pe un domeniu din allowlist
+  autoIdleMinutes: 15, // sesiunea automată se închide după atâtea minute fără pași
 };
+
+const IDLE_ALARM = 'gg-auto-idle';
+const TICKET_RE = /\b([A-Z][A-Z0-9]{1,9}-\d{1,7})\b/;
 
 async function getSettings() {
   const { settings } = await chrome.storage.local.get('settings');
@@ -96,7 +101,7 @@ async function injectIntoOpenTabs() {
 
 // ---------- sesiuni ----------
 
-async function startSession(ticket) {
+async function startSession(ticket, opts) {
   const externalId = String(ticket && ticket.external_id || '').trim();
   if (!externalId) throw new Error('ID-ul tichetului e obligatoriu.');
   const settings = await getSettings();
@@ -115,6 +120,7 @@ async function startSession(ticket) {
     allowlist: settings.allowlist.slice(),
     value_capture: settings.valueCapture,
     step_count: 0,
+    auto: !!(opts && opts.auto),
   };
   await serial(async () => {
     await chrome.storage.local.set({ activeSession: session, [stepsKey(session.id)]: [] });
@@ -124,6 +130,77 @@ async function startSession(ticket) {
   await injectIntoOpenTabs();
   await updateBadge();
   return session;
+}
+
+// ---------- captură automată ----------
+
+function autoTicket(tab) {
+  const src = (tab && tab.url || '') + ' ' + (tab && tab.title || '');
+  const m = src.match(TICKET_RE);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+  let host = null;
+  try { host = new URL(tab.url).hostname; } catch (_) { /* ignore */ }
+  return {
+    external_id: m ? m[1] : 'AUTO-' + stamp,
+    system: 'other',
+    title: host ? 'Captură automată · ' + host : 'Captură automată',
+    url: null,
+  };
+}
+
+function idleMs(settings) {
+  return Math.max(1, Number(settings.autoIdleMinutes) || DEFAULT_SETTINGS.autoIdleMinutes) * 60000;
+}
+
+async function armIdleAlarm(settings) {
+  await chrome.alarms.create(IDLE_ALARM, { delayInMinutes: idleMs(settings) / 60000 });
+}
+
+// O singură pornire automată în zbor, ca pașii veniți simultan să nu creeze două sesiuni.
+let autoStarting = null;
+function ensureAutoSession(tabUrl, tab) {
+  autoStarting = (autoStarting || Promise.resolve()).then(async () => {
+    const settings = await getSettings();
+    if (!settings.autoCapture || !settings.allowlist.length) return;
+    if (tabUrl && !urlAllowed(tabUrl, settings.allowlist)) return;
+    const { activeSession } = await chrome.storage.local.get('activeSession');
+    if (activeSession) {
+      // Alarma poate fi ratată (browser închis); o sesiune automată veche se închide aici.
+      const last = Date.parse(activeSession.last_step_at || activeSession.started_at);
+      if (!activeSession.auto || Date.now() - last < idleMs(settings)) return;
+      await stopSession('completed');
+    }
+    const session = await startSession(autoTicket(tab), { auto: true });
+    await armIdleAlarm(settings);
+    await announceSession(session, settings);
+  }).catch(() => {});
+  return autoStarting;
+}
+
+// Primul tab deschis pe un domeniu permis (pentru ID-ul tichetului la pornirea din setări).
+async function firstAllowedTab(settings) {
+  const tabs = await chrome.tabs.query({});
+  return tabs.find((t) => t.url && urlAllowed(t.url, settings.allowlist)) || null;
+}
+
+// POST imediat la pornire, ca backend-ul să afle de sesiune înainte de primul pas.
+async function announceSession(session, settings) {
+  if (!liveFor(settings, session)) return;
+  const payload = await buildPayload(session.id);
+  await postBody(settings, bodyFor(Object.assign({}, payload, { steps: [] }), settings.uploadFormat), session.id);
+}
+
+async function closeIdleAutoSession() {
+  const settings = await getSettings();
+  const { activeSession } = await chrome.storage.local.get('activeSession');
+  if (!activeSession || !activeSession.auto) return;
+  const last = Date.parse(activeSession.last_step_at || activeSession.started_at);
+  const left = idleMs(settings) - (Date.now() - last);
+  if (left > 0) {
+    await chrome.alarms.create(IDLE_ALARM, { delayInMinutes: Math.max(0.5, left / 60000) });
+    return;
+  }
+  await stopSession('completed');
 }
 
 function indexEntry(session) {
@@ -140,7 +217,8 @@ function indexEntry(session) {
 
 async function stopSession(status) {
   const settings = await getSettings();
-  const live = liveEnabled(settings);
+  const current = (await chrome.storage.local.get('activeSession')).activeSession;
+  const live = liveFor(settings, current);
   if (live) await flushLive();
   const session = await serial(async () => {
     const { activeSession } = await chrome.storage.local.get('activeSession');
@@ -153,6 +231,7 @@ async function stopSession(status) {
     return activeSession;
   });
   await updateBadge();
+  await chrome.alarms.clear(IDLE_ALARM);
   if (!session) return session;
   if (live) {
     // Pașii au plecat deja live; trimitem doar un lot gol, cu sesiunea finalizată.
@@ -219,7 +298,8 @@ function sanitizeStep(raw, tabUrl) {
 async function recordStep(raw, sender) {
   const tabUrl = sender.tab && sender.tab.url;
   if (!tabUrl || sender.frameId !== 0) return { ok: false };
-  return serial(async () => {
+  await ensureAutoSession(tabUrl, sender.tab);
+  const result = await serial(async () => {
     const { activeSession } = await chrome.storage.local.get('activeSession');
     if (!activeSession || !urlAllowed(tabUrl, activeSession.allowlist)) return { ok: false };
     const step = sanitizeStep(raw, tabUrl);
@@ -234,16 +314,25 @@ async function recordStep(raw, sender) {
     step.seq = steps.length + 1;
     steps.push(step);
     activeSession.step_count = steps.length;
+    activeSession.last_step_at = new Date().toISOString();
     await chrome.storage.local.set({ [key]: steps, activeSession });
     scheduleLiveFlush();
-    return { ok: true, seq: step.seq };
+    return { ok: true, seq: step.seq, auto: !!activeSession.auto };
   });
+  if (result.auto) await armIdleAlarm(await getSettings());
+  return result;
 }
 
 // ---------- trimitere live ----------
 
 function liveEnabled(settings) {
   return !!(settings.liveSync && settings.endpoint && settings.uploadFormat === 'events-batch');
+}
+
+// Sesiunile automate merg mereu live: nu are cine să apese „Trimite”.
+function liveFor(settings, session) {
+  if (liveEnabled(settings)) return true;
+  return !!(session && session.auto && settings.endpoint && settings.uploadFormat === 'events-batch');
 }
 
 let liveTimer = null;
@@ -264,9 +353,8 @@ function flushLive() {
 
 async function flushLiveOnce() {
   const settings = await getSettings();
-  if (!liveEnabled(settings)) return;
   const { activeSession } = await chrome.storage.local.get('activeSession');
-  if (!activeSession) return;
+  if (!activeSession || !liveFor(settings, activeSession)) return;
   const from = activeSession.live_sent || 0;
   if (activeSession.step_count <= from) return;
   const payload = await buildPayload(activeSession.id);
@@ -380,6 +468,7 @@ async function postBody(settings, body, sessionId) {
     let data = null;
     try { data = await res.json(); } catch (_) { /* fără JSON */ }
     const ok = res.ok || res.status === 409;
+    console.log('[gitgood] POST', settings.endpoint, res.status, 'events=' + (Array.isArray(body.events) ? body.events.length : (body.steps || []).length), data);
     return {
       status: ok ? 'uploaded' : 'failed',
       http_status: res.status,
@@ -389,6 +478,7 @@ async function postBody(settings, body, sessionId) {
       endpoint: settings.endpoint,
     };
   } catch (e) {
+    console.warn('[gitgood] POST eșuat', settings.endpoint, e);
     return { status: 'failed', http_status: null, at: new Date().toISOString(), job_id: null, error: String(e.message || e), endpoint: settings.endpoint };
   }
 }
@@ -449,9 +539,18 @@ async function saveSettings(patch) {
   if (!['events-batch', 'normalized'].includes(next.uploadFormat)) next.uploadFormat = 'events-batch';
   next.autoUpload = !!next.autoUpload;
   next.liveSync = !!next.liveSync;
+  next.autoCapture = !!next.autoCapture;
+  next.autoIdleMinutes = Math.min(240, Math.max(1, Math.round(Number(next.autoIdleMinutes) || DEFAULT_SETTINGS.autoIdleMinutes)));
   next.dashboardUrl = String(next.dashboardUrl || '').trim();
   await chrome.storage.local.set({ settings: next });
   await syncContentScripts();
+  // „Refresh”: scriptul ajunge și în taburile deja deschise, fără reîncărcarea paginii.
+  await injectIntoOpenTabs();
+  if (next.autoCapture && next.allowlist.length) {
+    const tab = await firstAllowedTab(next);
+    await ensureAutoSession(tab && tab.url, tab);
+    await flushLive();
+  }
   return next;
 }
 
@@ -499,13 +598,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === IDLE_ALARM) closeIdleAutoSession().catch(() => {});
+});
+
 chrome.permissions.onAdded.addListener(() => syncContentScripts());
 chrome.permissions.onRemoved.addListener(() => syncContentScripts());
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const { settings } = await chrome.storage.local.get('settings');
-  if (!settings) await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+  // Completează setările vechi cu cheile noi (content script-ul citește direct din storage).
+  await chrome.storage.local.set({ settings: await getSettings() });
   await syncContentScripts();
+  await injectIntoOpenTabs();
   await updateBadge();
   await applyRetention();
 });

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { evaluateDraft, generateProcedureDraft } from "../../../../../ai/processor.mjs";
 import { listEvents } from "@/app/lib/event-store";
 
-export const runtime = "nodejs";
-
 interface DraftRequest {
   sessionId?: unknown;
   sessionTicketId?: unknown;

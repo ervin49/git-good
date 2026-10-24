@@ -28,6 +28,9 @@
       <button class="primary" id="allow-add">Adaugă</button>
     </div>
     <p class="hint">„firma.ro” include și subdomeniile; „*.firma.ro” doar subdomeniile. Chrome îți cere permisiunea pentru fiecare domeniu. Un chip galben = domeniu fără permisiune (click pe el ca s-o acorzi).</p>
+    <label><input type="checkbox" id="auto-capture"> Captură automată: pornește singură o sesiune când lucrezi pe un domeniu din allowlist</label>
+    <label for="auto-idle">Închide sesiunea automată după (minute fără activitate)</label>
+    <input type="number" id="auto-idle" min="1" max="240" style="max-width:120px">
     <div class="msg" id="allow-msg"></div>
   </section>
 

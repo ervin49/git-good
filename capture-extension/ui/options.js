@@ -14,6 +14,8 @@ function fillForm() {
   $('#operator').value = s.operatorLabel || '';
   $('#auto-upload').checked = !!s.autoUpload;
   $('#live-sync').checked = !!s.liveSync;
+  $('#auto-capture').checked = !!s.autoCapture;
+  $('#auto-idle').value = s.autoIdleMinutes;
   $('#dashboard').value = s.dashboardUrl || '';
   $('#value-capture').value = s.valueCapture;
   $('#selectors').value = (s.extraSelectors || []).join('\n');
@@ -67,6 +69,14 @@ $('#allow-add').addEventListener('click', async () => {
   showMsg(m, 'Adăugat: ' + entries.join(', ') + '. Reîncarcă taburile deja deschise.', 'ok');
   await refresh();
 });
+
+async function saveAutoCapture() {
+  await gg('gg:saveSettings', { settings: { autoCapture: $('#auto-capture').checked, autoIdleMinutes: $('#auto-idle').value } });
+  showMsg($('#allow-msg'), 'Salvat.', 'ok');
+  await refresh();
+}
+$('#auto-capture').addEventListener('change', saveAutoCapture);
+$('#auto-idle').addEventListener('change', saveAutoCapture);
 
 $('#allow-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#allow-add').click();

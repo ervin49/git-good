@@ -2,8 +2,12 @@
 // îi maschează aici, în pagină, și trimite service worker-ului doar versiunea mascată.
 (function () {
   'use strict';
-  if (window.__ggCaptureLoaded) return;
-  window.__ggCaptureLoaded = true;
+  // După reîncărcarea extensiei scriptul vechi rămâne în pagină, dar fără legătură cu extensia;
+  // îl înlocuim doar pe acela, nu pe unul încă viu.
+  try {
+    if (window.__ggCaptureAlive && window.__ggCaptureAlive()) return;
+  } catch (_) { /* scriptul vechi e invalidat */ }
+  window.__ggCaptureAlive = () => !!(chrome.runtime && chrome.runtime.id);
 
   const { scrubText, scrubUrl, maskFieldValue } = globalThis.GGMask;
   const { hostAllowed } = globalThis.GGAllowlist;
@@ -13,8 +17,13 @@
   let lastUrl = null;
   let indicator = null;
 
-  function active() {
+  function recording() {
     return !!session && session.status === 'active' && hostAllowed(location.hostname, settings.allowlist);
+  }
+
+  // Cu captura automată, primul pas pe un domeniu permis pornește sesiunea din service worker.
+  function active() {
+    return recording() || (settings.autoCapture === true && hostAllowed(location.hostname, settings.allowlist));
   }
 
   function clip(s, n) {
@@ -217,7 +226,7 @@
   setInterval(checkNavigation, 800);
 
   function renderIndicator() {
-    const show = active() && settings.showIndicator !== false;
+    const show = recording() && settings.showIndicator !== false;
     if (!show) {
       if (indicator) { indicator.remove(); indicator = null; }
       return;
@@ -256,7 +265,10 @@
     if (changes.activeSession) s.activeSession = changes.activeSession.newValue || null;
     if (!changes.settings && !changes.activeSession) return;
     const wasActive = active();
+    const prevId = session && session.id;
     applyState(s);
-    if (!wasActive && active()) { lastUrl = null; checkNavigation(); }
+    const newSession = !!(session && session.id !== prevId);
+    // Sesiune nouă: pagina vizibilă intră ca prim pas, ca să apară imediat în backend.
+    if ((!wasActive && active()) || (newSession && document.visibilityState === 'visible')) { lastUrl = null; checkNavigation(); }
   });
 })();

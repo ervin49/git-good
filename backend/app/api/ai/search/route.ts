@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { searchProcedures } from "../../../../../ai/processor.mjs";
 
-export const runtime = "nodejs";
-
 interface SearchRequest {
   query?: unknown;
   procedures?: unknown;
