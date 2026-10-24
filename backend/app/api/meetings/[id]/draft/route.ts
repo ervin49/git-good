@@ -29,7 +29,9 @@ export async function POST(request: NextRequest, { params }: Context) {
     const quality = evaluateDraft(draft, capture.steps);
     const stored = saveDraft(meeting.id, ticketId, draft, quality);
     return NextResponse.json({ ...stored, truncated: meeting.sentences.length > capture.steps.length });
-  } catch {
-    return NextResponse.json({ error: "Generarea procedurii din ședință a eșuat." }, { status: 502 });
+  } catch (error) {
+    // Surface the provider's reason (e.g. "OpenAI API 429: no credits"), never anything that looks like a key.
+    const reason = (error instanceof Error ? error.message : String(error)).replace(/sk-[A-Za-z0-9_-]+/g, "sk-***").slice(0, 300);
+    return NextResponse.json({ error: `Generarea procedurii din ședință a eșuat: ${reason}` }, { status: 502 });
   }
 }
