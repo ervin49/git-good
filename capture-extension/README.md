@@ -24,6 +24,8 @@ a datelor sensibile, și îi exportă / trimite la backend în schema normalizat
 cd backend && npm install && npm run dev
 ```
 
+Pentru site-ul deployat pe Vercel pune în Setări URL-ul de upload `https://git-good-front.vercel.app/api/events` (front-ul face proxy către backend); dashboard-ul `https://git-good-front.vercel.app/?sessionId={sessionId}`.
+
 În Setări lasă URL-ul implicit `http://localhost:3000/api/events` (format `events-batch`). Opțiuni:
 
 - **Trimitere live**: pașii pleacă la backend la ~1,5 s după ce apar, iar dashboard-ul de pe
