@@ -2,17 +2,25 @@
 
 Interfața demonstrativă NOD, construită cu Next.js App Router, React, TypeScript și Tailwind CSS.
 
-## Pornire locală
+## Pornire locală (pentru toată echipa)
 
-Cerință: Node.js 20.9 sau mai nou și npm. În acest calculator sunt deja instalate Node.js 24 și npm 11.
+Cerință: Node.js 22.5 sau mai nou (backend-ul folosește `node:sqlite`) și npm.
 
-Din PowerShell, deschide folderul `frontend` și pornește aplicația:
-
-```powershell
-npm run dev
-```
-
-Apoi deschide [http://localhost:3000](http://localhost:3000).
+1. **Cheile API** nu sunt în repo (repo-ul e public; cheile publicate sunt furate sau dezactivate automat). Fiecare își face fișierul local:
+   ```bash
+   cp backend/.env.example backend/.env.local
+   ```
+   și pune în el cel puțin `GEMINI_API_KEY` (gratuit, de la https://aistudio.google.com/apikey, cu un cont Gmail personal). Opțional: `FIREFLIES_API_KEY`. `backend/.env.local` e ignorat de git.
+2. **Backend** (port 3001):
+   ```bash
+   cd backend && npm install && npm run dev
+   ```
+3. **Frontend** (port 3000), într-un alt terminal:
+   ```bash
+   cd front && npm install && npm run dev
+   ```
+   Apoi deschide [http://localhost:3000](http://localhost:3000).
+4. **Extensia de captură** (opțional): `chrome://extensions` → Developer mode → Load unpacked → folderul `capture-extension`. Pași în [`capture-extension/README.md`](capture-extension/README.md).
 
 ## Ecrane incluse
 
