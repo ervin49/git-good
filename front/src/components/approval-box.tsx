@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, BadgeCheck, CircleAlert, Loader2 } from "lucide-react";
 import { approveProcedure, type ApprovedProcedure, type ProcedureDraft } from "@/lib/api";
+import { PROCEDURES_CHANGED } from "@/lib/use-approved-procedures";
 
 const REVIEWER_KEY = "helpy-reviewer";
 
@@ -42,6 +43,7 @@ export function ApprovalBox({ draft, sourceType, sourceId, groundingScore }: {
     try {
       try { window.localStorage.setItem(REVIEWER_KEY, reviewer.trim()); } catch { /* storage blocked */ }
       setApproved(await approveProcedure({ draft, sourceType, sourceId, approvedBy: reviewer.trim(), keepOrders: keep, groundingScore }));
+      window.dispatchEvent(new Event(PROCEDURES_CHANGED));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Aprobarea a eșuat.");
     }

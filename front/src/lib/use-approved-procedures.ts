@@ -33,16 +33,30 @@ export function toLibraryItem(p: ApprovedProcedure): LibraryProcedure {
   };
 }
 
+// Fired after an approval so open library/search pages refresh at once.
+export const PROCEDURES_CHANGED = "helpy:procedures-changed";
+const POLL_MS = 15_000;
+
 // Procedures a person approved in Helpy (from the backend); empty while loading or offline.
+// Next.js keeps visited pages alive, so the list also refreshes on approval, on focus and periodically.
 export function useApprovedProcedures(): LibraryProcedure[] {
   const [items, setItems] = useState<LibraryProcedure[]>([]);
   useEffect(() => {
     let cancelled = false;
-    listApprovedProcedures().then(
+    const load = () => listApprovedProcedures().then(
       (list) => { if (!cancelled) setItems(list.map(toLibraryItem)); },
       () => { /* backend offline: show only the demo procedures */ },
     );
-    return () => { cancelled = true; };
+    void load();
+    const timer = window.setInterval(load, POLL_MS);
+    window.addEventListener(PROCEDURES_CHANGED, load);
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener(PROCEDURES_CHANGED, load);
+      window.removeEventListener("focus", load);
+    };
   }, []);
   return items;
 }
