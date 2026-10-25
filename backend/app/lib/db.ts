@@ -105,8 +105,10 @@ interface Connection {
 // Stash on globalThis so dev HMR doesn't open a new connection on every reload.
 const g = globalThis as unknown as { __nodDb?: Connection };
 function connect(): Connection {
+  const url = process.env.TURSO_DATABASE_URL || localUrl();
+  console.log(`[db] ${url.startsWith("file:") ? "local file" : "remote " + url.split("://")[0]}`);
   const client = createClient({
-    url: process.env.TURSO_DATABASE_URL || localUrl(),
+    url,
     authToken: process.env.TURSO_AUTH_TOKEN || undefined,
   });
   const ready = client.executeMultiple(SCHEMA);
