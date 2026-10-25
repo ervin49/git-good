@@ -179,3 +179,14 @@ export function listNotifications(): Promise<NotificationList> {
 export function markNotificationsRead(id?: string): Promise<NotificationList> {
   return request<NotificationList>("/api/notifications", { method: "POST", body: JSON.stringify({ id }) });
 }
+
+export type TeamsAnalysis = MeetingDraft & {
+  conversation_id: string;
+  ticket_id: string | null;
+  messages: { author: string; time: string | null; text: string }[];
+};
+
+// Sends a pasted Teams conversation to the backend, which redacts it and has the AI write the procedure.
+export function analyzeTeamsConversation(text: string, ticketId?: string): Promise<TeamsAnalysis> {
+  return request<TeamsAnalysis>("/api/teams/analyze", { method: "POST", body: JSON.stringify({ text, ticketId }) });
+}

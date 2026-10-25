@@ -96,7 +96,7 @@ Răspunde exclusiv în JSON-ul cerut, în limba română.`;
 // Extra rules when the input is a meeting transcript (session.source = "meeting"): every event is one
 // spoken line, not an observed UI action.
 const MEETING_INSTRUCTIONS = `
-Sursa este transcrierea unei ședințe: fiecare eveniment (actionType=utterance) este o replică spusă, cu vorbitorul în label.
+Sursa este transcrierea unei ședințe sau o conversație de chat (de ex. Teams): fiecare eveniment (actionType=utterance) este o replică sau un mesaj, cu autorul în label.
 - Extrage procedura pe pași din ce descriu participanții că au făcut sau trebuie făcut; ignoră discuțiile care nu țin de proces.
 - Un pas doar povestit în ședință nu este o acțiune observată: marchează-l Deducție AI dacă e descris clar, altfel Neconfirmat. Nu folosi Observat.
 - Citează în evidence_seq replicile din care reiese fiecare pas. Nu include nume de persoane în instrucțiuni.`;
@@ -324,28 +324,53 @@ export function aiConfigured() {
   if (provider === "gemini") return !!process.env.GEMINI_API_KEY;
   return false;
 }
+// Gemini's free tier is often overloaded on the big models, so try a chain of models: GEMINI_MODEL
+// first, then GEMINI_FALLBACK_MODELS, moving on after a timeout or an "overloaded"/rate-limit error.
+const GEMINI_RETRYABLE = new Set([403, 404, 408, 429, 500, 502, 503, 504]); // 403/404: model not available to this project
 async function callGemini({ schema, instructions, input }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Setează GEMINI_API_KEY în mediul serverului înainte de a apela AI-ul.");
   const baseUrl = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  const response = await fetch(`${baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
-    method: "POST",
-    headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instructions }] },
-      contents: [{ role: "user", parts: [{ text: JSON.stringify(input) }] }],
-      generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema }
-    })
+  const models = [process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+    ...String(process.env.GEMINI_FALLBACK_MODELS ?? "gemini-3.1-flash-lite,gemini-3.8-flash").split(",")]
+    .map((m) => m.trim()).filter((m, i, all) => m && all.indexOf(m) === i);
+  const timeoutMs = Number(process.env.GEMINI_TIMEOUT_MS) || 60_000;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: instructions }] },
+    contents: [{ role: "user", parts: [{ text: JSON.stringify(input) }] }],
+    generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema }
   });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Gemini API ${response.status}: ${body.error?.message ?? "cererea a eșuat"}`);
-  if (body.promptFeedback?.blockReason) throw new Error(`Gemini a blocat cererea (${body.promptFeedback.blockReason}).`);
-  const candidate = body.candidates?.[0];
-  // Thinking models may return thought parts; only the answer parts hold the JSON.
-  const text = (candidate?.content?.parts ?? []).filter((part) => !part.thought).map((part) => part.text ?? "").join("");
-  if (!text) throw new Error(`Gemini nu a returnat conținut JSON (finishReason: ${candidate?.finishReason ?? "necunoscut"}).`);
-  return JSON.parse(text);
+  let lastError = null;
+  for (const model of models) {
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (error) {
+      lastError = new Error(`Gemini (${model}) nu a răspuns în ${Math.round(timeoutMs / 1000)} s.`);
+      continue;
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      lastError = new Error(`Gemini API ${response.status} (${model}): ${data.error?.message ?? "cererea a eșuat"}`);
+      if (GEMINI_RETRYABLE.has(response.status)) continue;
+      throw lastError;
+    }
+    if (data.promptFeedback?.blockReason) throw new Error(`Gemini a blocat cererea (${data.promptFeedback.blockReason}).`);
+    const candidate = data.candidates?.[0];
+    // Thinking models may return thought parts; only the answer parts hold the JSON.
+    const text = (candidate?.content?.parts ?? []).filter((part) => !part.thought).map((part) => part.text ?? "").join("");
+    if (!text) {
+      lastError = new Error(`Gemini (${model}) nu a returnat conținut JSON (finishReason: ${candidate?.finishReason ?? "necunoscut"}).`);
+      continue;
+    }
+    return JSON.parse(text);
+  }
+  throw lastError ?? new Error("Niciun model Gemini nu este configurat.");
 }
 async function callStructuredModel({ name, schema, instructions, input }) {
   if (aiProvider() === "gemini") return callGemini({ schema, instructions, input });
@@ -406,7 +431,7 @@ function enforceReviewBoundary(draft, validSeqs, validStepIds, ticketId, meeting
     }
     if (item.status === "Observat" && meeting && hasStepEvidence) {
       item.status = "Deducție AI";
-      item.reason = "Pasul este descris într-o ședință, nu observat direct; trebuie confirmat de cineva.";
+      item.reason = "Pasul este descris într-o discuție (ședință sau chat), nu observat direct; trebuie confirmat de cineva.";
     }
     if (item.status === "Observat" && !hasStepEvidence) {
       item.status = "Neconfirmat";

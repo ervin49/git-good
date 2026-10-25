@@ -201,7 +201,7 @@ function store(t: FirefliesTranscript, ticketIds: string[], syncedAt: string): v
       // Participant emails are not stored, only how many there were.
       Array.isArray(t.participants) ? t.participants.length : 0,
       JSON.stringify(ticketIds),
-      clean(t.summary?.overview),
+      clean(String(t.summary?.overview ?? "").replace(/\*\*|__/g, "")),
       JSON.stringify(splitList(t.summary?.action_items)),
       JSON.stringify(splitList(t.summary?.keywords)),
       syncedAt,
@@ -352,14 +352,14 @@ db.exec(`
 
 // Shapes a meeting like a normalized capture (capture-session.v1) so ai/processor.mjs can turn it into
 // a cited, step-by-step procedure: each spoken line becomes one "utterance" step the draft can cite.
-export function meetingToCapture(meeting: MeetingSummary & { sentences: MeetingSentence[] }, ticketId: string | null) {
+export function meetingToCapture(meeting: MeetingSummary & { sentences: MeetingSentence[] }, ticketId: string | null, application = `Ședință Fireflies – ${meeting.title}`) {
   const start = Date.parse(meeting.date) || Date.now();
   return {
     schema_version: "1.0",
     session: {
       id: `meeting:${meeting.id}`,
       source: "meeting",
-      application: `Ședință Fireflies – ${meeting.title}`,
+      application,
       started_at: new Date(start).toISOString(),
       status: "completed",
       ticket: ticketId

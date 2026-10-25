@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { LiveDraftPanel } from "@/components/live-draft-panel";
+import { analyzeTeamsConversation, type ClaimStatus } from "@/lib/api";
 import { ArrowLeft, ArrowUpRight, Check, CheckCheck, CircleAlert, CircleCheck, Edit3, FileText, MessageSquareText, MoreHorizontal, ShieldCheck, Sparkles, X, XCircle } from "lucide-react";
 
 interface ReviewStep {
@@ -58,8 +59,51 @@ export default function ReviewPage() {
   const [editing, setEditing] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [toast, setToast] = useState("");
+  const [aiMode, setAiMode] = useState<"demo" | "ai">("demo");
+  const [teamsAnalyzing, setTeamsAnalyzing] = useState(false);
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
-  const analyzeTeamsTranscript = () => {
+  const toneFor: Record<ClaimStatus, string> = { Observat: "blue", "Deducție AI": "violet", Neconfirmat: "amber", Confirmat: "green" };
+  // Real analysis: the backend redacts the conversation and the AI writes a procedure citing the messages.
+  const analyzeTeamsTranscript = async () => {
+    if (!transcript.trim()) {
+      notify("Lipește cel puțin un mesaj înainte de analiză.");
+      return;
+    }
+    setTeamsAnalyzing(true);
+    try {
+      const result = await analyzeTeamsConversation(transcript, /^[A-Z][A-Z0-9]{1,9}-\d{1,7}$/.test(caseId) ? caseId : undefined);
+      const messages = result.messages.map((m, i) => ({ author: m.author, time: m.time ?? String(i + 1), text: m.text }));
+      const sourceFor = (seqs: number[]) => seqs.map((seq) => messages[seq - 1]).filter(Boolean)
+        .map((m) => "Teams · " + m.author + " · " + m.time).join(" · ");
+      const draft = result.draft;
+      const generated: ReviewStep[] = draft.steps.map((step) => ({
+        text: step.instruction,
+        state: step.status,
+        tone: toneFor[step.status] ?? "violet",
+        source: sourceFor(step.evidence_seq) || step.reason,
+      }));
+      if (generated.length === 0) {
+        generated.push({ text: "Conversația nu descrie un proces clar; verifică mesajele înainte de publicare.", state: "Neconfirmat", tone: "amber", source: draft.missing_information.join(" ") || "Analiză AI" });
+      }
+      setTeamsMessages(messages);
+      setSteps(generated);
+      setOutcomeText(draft.outcome?.text ?? "Nu există o confirmare explicită a rezultatului în conversație.");
+      setCaseTitle(draft.title || "Procedură din conversația Teams");
+      setCaseId(result.ticket_id ?? "TEAMS");
+      setAiMode("ai");
+      setReviewAnswer(null);
+      setConfirmed(false);
+      setTeamsImportOpen(false);
+      notify("Analiză AI: " + messages.length + " mesaje → " + generated.length + " pași. Verifică-i înainte de publicare.");
+    } catch (error) {
+      analyzeLocally();
+      notify("AI indisponibil (" + (error instanceof Error ? error.message : String(error)).slice(0, 120) + "). Am folosit analiza locală.");
+    } finally {
+      setTeamsAnalyzing(false);
+    }
+  };
+  // Fallback without AI: keyword heuristics on the pasted messages.
+  const analyzeLocally = () => {
     const parsed = parseTeamsTranscript(transcript);
     if (parsed.length === 0) {
       notify("Lipește cel puțin un mesaj înainte de analiză.");
@@ -106,10 +150,10 @@ export default function ReviewPage() {
     setSteps(generatedSteps);
     setCaseTitle("Procedură din conversația Teams");
     setCaseId("DEMO-TEAMS");
+    setAiMode("demo");
     setReviewAnswer(null);
     setConfirmed(false);
     setTeamsImportOpen(false);
-    notify("Analiză demo: " + parsed.length + " mesaje parcurse. Nu s-a conectat la Teams.");
   };
   const submitConfirmation = (answer: "yes" | "no" | "unsure") => {
     setReviewAnswer(answer);
@@ -141,11 +185,11 @@ export default function ReviewPage() {
             </div>
             <button type="button" onClick={()=>setTeamsImportOpen(true)} className="mt-5 inline-flex items-center gap-1.5 text-[9px] font-semibold text-[#db4b00] hover:text-[#cc4200]">Importă / editează conversația <ArrowUpRight size={12}/></button>
           </div>
-          <div className="border-t border-[#DDCABB] bg-[#F0E3D6] px-5 py-3"><div className="flex items-center gap-2 text-[9px] text-[#8a9991]"><ShieldCheck size={13} className="text-[#6a9879]"/>Demo local: conversație introdusă manual, fără conectare la Microsoft Teams.</div></div>
+          <div className="border-t border-[#DDCABB] bg-[#F0E3D6] px-5 py-3"><div className="flex items-center gap-2 text-[9px] text-[#8a9991]"><ShieldCheck size={13} className="text-[#6a9879]"/>{aiMode === "ai" ? "Conversație lipită din Teams, analizată de AI; datele sensibile au fost mascate înainte de analiză." : "Demo local: conversație introdusă manual, fără conectare la Microsoft Teams."}</div></div>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-[#FF5A00] bg-[#E8D9CA] shadow-[0_4px_14px_rgba(61,35,19,.04)]">
-          <div className="flex flex-col justify-between gap-3 border-b border-[#DDCABB] px-5 py-4 sm:flex-row sm:items-center sm:px-6"><div><div className="flex items-center gap-2"><h2 className="text-[13px] font-semibold text-[#302016]">Procedură candidat</h2><span className="inline-flex items-center gap-1 rounded-full bg-[#f0edfa] px-2 py-1 text-[9px] font-semibold text-[#7463a5]"><Sparkles size={10}/> simulare AI · demo</span></div><p className="mt-1 text-[10px] text-[#8c9a93]">Pașii păstrează proveniența și nivelul de confirmare</p></div><span className="inline-flex items-center gap-1.5 self-start rounded-full bg-[#fff4ec] px-2.5 py-1.5 text-[9px] font-semibold text-[#c95418] sm:self-auto"><ShieldCheck size={11}/> {teamsMessages.length} mesaje demo</span></div>
+          <div className="flex flex-col justify-between gap-3 border-b border-[#DDCABB] px-5 py-4 sm:flex-row sm:items-center sm:px-6"><div><div className="flex items-center gap-2"><h2 className="text-[13px] font-semibold text-[#302016]">Procedură candidat</h2><span className="inline-flex items-center gap-1 rounded-full bg-[#f0edfa] px-2 py-1 text-[9px] font-semibold text-[#7463a5]"><Sparkles size={10}/> {aiMode === "ai" ? "analiză AI" : "simulare AI · demo"}</span></div><p className="mt-1 text-[10px] text-[#8c9a93]">Pașii păstrează proveniența și nivelul de confirmare</p></div><span className="inline-flex items-center gap-1.5 self-start rounded-full bg-[#fff4ec] px-2.5 py-1.5 text-[9px] font-semibold text-[#c95418] sm:self-auto"><ShieldCheck size={11}/> {teamsMessages.length} {aiMode === "ai" ? "mesaje analizate" : "mesaje demo"}</span></div>
           <div className="p-5 sm:p-6">
             {editing&&<div className="mb-4 rounded-xl border border-[#f2ddd0] bg-[#F0E3D6] p-3"><label className="mb-2 block text-[9px] font-semibold uppercase tracking-[.08em] text-[#708279]">Notă de revizuire</label><textarea defaultValue="Verifică seria aferentă punctului de lucru înainte de a modifica setarea." className="min-h-[68px] w-full resize-y rounded-lg border border-[#D9C3AF] bg-[#E8D9CA] p-2.5 text-[10px] leading-5 text-[#455a4f] outline-none focus:border-[#8fbea3]"/><div className="mt-2 flex justify-end gap-2"><button onClick={()=>setEditing(false)} className="rounded-lg px-3 py-1.5 text-[9px] font-semibold text-[#7a8a82] hover:bg-[#fff3eb]">Renunță</button><button onClick={()=>{setEditing(false);notify("Modificarea a fost salvată în demo.")}} className="rounded-lg bg-[#fff0e7] px-3 py-1.5 text-[9px] font-semibold text-[#d85415]">Salvează nota</button></div></div>}
             <div className="space-y-1">
@@ -157,7 +201,7 @@ export default function ReviewPage() {
           </div>
         </section>
       </div>
-      {teamsImportOpen&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#1a0d08]/55 p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget)setTeamsImportOpen(false)}}><section role="dialog" aria-modal="true" aria-labelledby="teams-import-title" className="w-full max-w-2xl rounded-2xl border border-[#DDCABB] bg-[#E8D9CA] p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><div className="text-[9px] font-bold uppercase tracking-[.12em] text-[#d95413]">Demo · import manual</div><h2 id="teams-import-title" className="mt-2 text-[18px] font-semibold tracking-tight text-[#2a170e]">Lipește conversația din Teams</h2><p className="mt-1 text-[10px] leading-5 text-[#77877f]">Pune câte un mesaj pe linie. Format opțional: oră Autor: mesaj.</p></div><button type="button" aria-label="Închide" onClick={()=>setTeamsImportOpen(false)} className="rounded-lg p-1.5 text-[#71827a] hover:bg-[#D9C2AA]"><X size={16}/></button></div><textarea value={transcript} onChange={(event)=>setTranscript(event.target.value)} rows={8} className="mt-4 w-full resize-y rounded-xl border border-[#D6C1AD] bg-[#F0E3D6] p-3 font-mono text-[10px] leading-5 text-[#443026] outline-none focus:border-[#e95811]"/><div className="mt-4 flex flex-col-reverse justify-between gap-2 sm:flex-row"><button type="button" onClick={()=>setTranscript(initialTranscript)} className="rounded-xl border border-[#D6C1AD] px-4 py-2.5 text-[10px] font-semibold text-[#5b7166] hover:bg-[#F0E3D6]">Încarcă exemplul</button><button type="button" onClick={analyzeTeamsTranscript} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#ff5a00] px-4 py-2.5 text-[10px] font-semibold text-[#29170e] hover:bg-[#e94c00]"><Sparkles size={13}/>Analizează conversația</button></div><p className="mt-4 rounded-lg bg-[#fff9eb] px-3 py-2 text-[9px] leading-4 text-[#927b52]">Analiza este o simulare locală pentru prezentare. Mesajele nu sunt trimise către Microsoft sau către backend.</p></section></div>}
+      {teamsImportOpen&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#1a0d08]/55 p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget)setTeamsImportOpen(false)}}><section role="dialog" aria-modal="true" aria-labelledby="teams-import-title" className="w-full max-w-2xl rounded-2xl border border-[#DDCABB] bg-[#E8D9CA] p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><div className="text-[9px] font-bold uppercase tracking-[.12em] text-[#d95413]">Demo · import manual</div><h2 id="teams-import-title" className="mt-2 text-[18px] font-semibold tracking-tight text-[#2a170e]">Lipește conversația din Teams</h2><p className="mt-1 text-[10px] leading-5 text-[#77877f]">Pune câte un mesaj pe linie. Format opțional: oră Autor: mesaj.</p></div><button type="button" aria-label="Închide" onClick={()=>setTeamsImportOpen(false)} className="rounded-lg p-1.5 text-[#71827a] hover:bg-[#D9C2AA]"><X size={16}/></button></div><textarea value={transcript} onChange={(event)=>setTranscript(event.target.value)} rows={8} className="mt-4 w-full resize-y rounded-xl border border-[#D6C1AD] bg-[#F0E3D6] p-3 font-mono text-[10px] leading-5 text-[#443026] outline-none focus:border-[#e95811]"/><div className="mt-4 flex flex-col-reverse justify-between gap-2 sm:flex-row"><button type="button" onClick={()=>setTranscript(initialTranscript)} className="rounded-xl border border-[#D6C1AD] px-4 py-2.5 text-[10px] font-semibold text-[#5b7166] hover:bg-[#F0E3D6]">Încarcă exemplul</button><button type="button" onClick={analyzeTeamsTranscript} disabled={teamsAnalyzing} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#ff5a00] px-4 py-2.5 text-[10px] font-semibold text-[#29170e] hover:bg-[#e94c00] disabled:opacity-60"><Sparkles size={13}/>{teamsAnalyzing ? "Se analizează…" : "Analizează conversația"}</button></div><p className="mt-4 rounded-lg bg-[#fff9eb] px-3 py-2 text-[9px] leading-4 text-[#927b52]">Mesajele merg la backend-ul Helpy: datele sensibile sunt mascate, apoi AI-ul (Gemini sau OpenAI) scrie procedura cu sursa fiecărui pas. Nu ne conectăm direct la contul Microsoft Teams.</p></section></div>}
       {confirmDialogOpen&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#1a0d08]/55 p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget)setConfirmDialogOpen(false)}}><section role="dialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-md rounded-2xl border border-[#DDCABB] bg-[#E8D9CA] p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><div className="text-[9px] font-bold uppercase tracking-[.12em] text-[#d95413]">Verificare de către utilizator</div><h2 id="confirm-title" className="mt-2 text-[18px] font-semibold tracking-tight text-[#2a170e]">Ai reușit să obții acest rezultat?</h2></div><button type="button" aria-label="Închide" onClick={()=>setConfirmDialogOpen(false)} className="rounded-lg p-1.5 text-[#71827a] hover:bg-[#D9C2AA]"><X size={16}/></button></div><p className="mt-4 rounded-xl border border-[#DDCABB] bg-[#F0E3D6] p-3.5 text-[11px] leading-5 text-[#443026]">{outcomeText}</p><p className="mt-3 text-[10px] leading-5 text-[#77877f]">Simularea a extras un posibil rezultat din mesaje. Răspunsul tău stabilește dacă îl marcăm drept confirmat.</p><div className="mt-5 grid gap-2 sm:grid-cols-3"><button type="button" onClick={()=>submitConfirmation("yes")} className="rounded-xl bg-[#ff5a00] px-3 py-3 text-[10px] font-semibold text-[#29170e] hover:bg-[#e94c00]">Da, am reușit</button><button type="button" onClick={()=>submitConfirmation("no")} className="rounded-xl border border-[#D6C1AD] bg-[#E8D9CA] px-3 py-3 text-[10px] font-semibold text-[#5b7166] hover:bg-[#F0E3D6]">Nu</button><button type="button" onClick={()=>submitConfirmation("unsure")} className="rounded-xl border border-[#D6C1AD] bg-[#E8D9CA] px-3 py-3 text-[10px] font-semibold text-[#5b7166] hover:bg-[#F0E3D6]">Nu sunt sigur</button></div><p className="mt-4 text-[9px] text-[#9aa69f]">Doar „Da, am reușit” marchează afirmația „Confirmat de tine”.</p></section></div>}
       {toast&&<div role="status" className="fixed bottom-5 right-5 z-[60] flex items-center gap-2 rounded-xl bg-[#2a160d] px-4 py-3 text-[11px] font-medium text-white shadow-xl"><CircleCheck size={15} className="text-[#ffb98f]"/>{toast}</div>}
     </div>
