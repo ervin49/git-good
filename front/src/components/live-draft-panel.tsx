@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronUp, CircleAlert, MousePointerClick, Radio, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ApprovalBox } from "@/components/approval-box";
 import { generateDraft, listSessionEvents, listSessions, type ClaimStatus, type DraftClaim, type DraftResponse, type SessionSummary, type StoredEvent } from "@/lib/api";
 
 const statusStyles: Record<ClaimStatus, string> = {
@@ -182,6 +183,7 @@ function SessionDraftPanel({ requestedSession }: { requestedSession: string }) {
         {draft.uncertainties.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Întrebări deschise</div><ul className="mt-2 space-y-2">{draft.uncertainties.map((item, index) => <li key={index} className="rounded-xl border border-[#f0e5cf] bg-[#fffaf0] px-3 py-2.5"><p className="text-[10px] font-semibold text-[#795f35]">{item.question}</p><p className="mt-1 text-[9px] leading-4 text-[#927b52]">{item.reason}</p></li>)}</ul></div>}
         {draft.missing_information.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Informații lipsă</div><ul className="mt-2 list-disc space-y-1 pl-5 text-[10px] leading-5 text-[#77877f]">{draft.missing_information.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
         <p className="mt-5 text-[9px] leading-4 text-[#9aa69f]">AI-ul nu poate marca nimic drept „Confirmat”; fiecare pas trebuie validat de o persoană.</p>
+        <ApprovalBox key={`${selected}:${draft.title}`} draft={draft} sourceType="capture" sourceId={selected} groundingScore={result.quality.grounding_score} />
       </div>}
     </div>
   </section>;

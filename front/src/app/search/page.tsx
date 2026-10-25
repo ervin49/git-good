@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { procedures } from "@/lib/mock-data";
+import { useApprovedProcedures } from "@/lib/use-approved-procedures";
 import { searchProcedures, type SearchCandidate, type SearchResponse } from "@/lib/api";
 import { ArrowRight, ArrowUpRight, BookOpenCheck, FileText, MessageSquareText, Search, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -14,16 +15,6 @@ const sources = [
   { title: "Pașii de activare a seriei", type: "Notițe meeting · Financiar", time: "21 oct. 2026", icon: FileText },
 ];
 
-// Only approved procedures are published; the backend drops anything else before the AI sees it.
-const candidates: SearchCandidate[] = procedures.map((procedure) => ({
-  procedure_id: procedure.id,
-  title: procedure.title,
-  summary: `${procedure.category} · ${procedure.context}`,
-  applicability: procedure.context,
-  application: procedure.context,
-  published: procedure.status === "Aprobată",
-  allowed: true,
-}));
 const relevanceLabel = { high: "relevanță mare", medium: "relevanță medie", low: "relevanță mică" } as const;
 
 export default function SearchPage() {
@@ -33,15 +24,28 @@ export default function SearchPage() {
   const [aiResult, setAiResult] = useState<SearchResponse | null>(null);
   const [aiError, setAiError] = useState("");
   const requestId = useRef(0);
+  // Procedures approved in Helpy come first, then the demo library.
+  const approved = useApprovedProcedures();
+  const all = useMemo(() => [...approved, ...procedures.map((p) => ({ ...p, href: "/procedures" }))], [approved]);
+  // Only approved procedures are published; the backend drops anything else before the AI sees it.
+  const candidates: SearchCandidate[] = useMemo(() => all.map((procedure) => ({
+    procedure_id: procedure.id,
+    title: procedure.title,
+    summary: `${procedure.category} · ${procedure.context}`,
+    applicability: procedure.context,
+    application: procedure.context,
+    published: procedure.status === "Aprobată",
+    allowed: true,
+  })), [all]);
   const localResults = useMemo(() => {
-    if (!query.trim()) return procedures.slice(0, 3);
+    if (!query.trim()) return all.slice(0, 3);
     const words = query.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
-    const ranked = procedures.map((procedure) => ({ procedure, score: words.filter((word) => `${procedure.title} ${procedure.category} ${procedure.context}`.toLowerCase().includes(word)).length })).filter((item) => item.score > 0).sort((a,b)=>b.score-a.score).map((item)=>item.procedure);
+    const ranked = all.map((procedure) => ({ procedure, score: words.filter((word) => `${procedure.title} ${procedure.category} ${procedure.context}`.toLowerCase().includes(word)).length })).filter((item) => item.score > 0).sort((a,b)=>b.score-a.score).map((item)=>item.procedure);
     return ranked;
-  }, [query]);
+  }, [query, all]);
   const results = aiResult
     ? aiResult.matches.flatMap((match) => {
-        const procedure = procedures.find((item) => item.id === match.procedure_id);
+        const procedure = all.find((item) => item.id === match.procedure_id);
         return procedure ? [{ ...procedure, match }] : [];
       })
     : localResults.map((procedure) => ({ ...procedure, match: null }));
@@ -79,7 +83,7 @@ export default function SearchPage() {
         <section className="overflow-hidden rounded-2xl border border-[#FF5A00] bg-[#E8D9CA] shadow-[0_4px_14px_rgba(61,35,19,.04)]"><div className="flex items-center justify-between border-b border-[#DDCABB] px-5 py-4"><div><h2 className="text-[13px] font-semibold text-[#302016]">{submitted?`Rezultate pentru „${query}”`:"Sugestii de proceduri"}</h2><p className="mt-1 text-[9px] text-[#8c9a93]">Potrivite după task, context și surse aprobate</p></div><span className="inline-flex items-center gap-1 text-[9px] text-[#65816f]"><Sparkles size={11}/> {aiResult?"Căutare semantică AI":"Căutare locală"}</span></div>
           {aiError&&<div className="border-b border-[#f0dfbd] bg-[#fff9eb] px-5 py-2.5 text-[9px] text-[#775a2a]">{aiError} Afișăm rezultatele potrivite local.</div>}
           {aiResult?.needs_clarification&&aiResult.clarification_question&&<div className="border-b border-[#DDCABB] bg-[#F0E3D6] px-5 py-2.5 text-[10px] text-[#53685d]">{aiResult.clarification_question}</div>}
-          <div className="divide-y divide-[#E0CEBF]">{results.map((item,index)=><Link href="/procedures" key={item.id} className="group block px-5 py-4 transition hover:bg-[#F0E3D6]"><div className="flex items-start gap-3"><div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#fff3eb] text-[#e85a1b]"><BookOpenCheck size={16}/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="text-[11px] font-semibold text-[#2b4338] group-hover:text-[#ff5a00]">{item.title}</h3><span className="rounded-full bg-[#fff0e7] px-2 py-0.5 text-[8px] font-semibold text-[#d94c0b]">Aprobată</span></div><p className="mt-1.5 text-[10px] leading-5 text-[#788a80]">{item.match?item.match.reason:"Verifică seria asociată punctului de lucru, apoi reîncearcă emiterea. Dacă problema persistă, urmează pasul de escaladare."}</p><div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-[#96a29b]"><span>{item.context}</span>{item.match&&<><span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span>{relevanceLabel[item.match.relevance]}</span></>}<span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span>{item.sources} surse</span><span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span className="inline-flex items-center gap-1 text-[#c95418]"><ShieldCheck size={10}/>{item.confidence}% confirmată</span></div></div><ArrowUpRight size={14} className="mt-1 shrink-0 text-[#aab6af] group-hover:text-[#f05b13]"/></div></Link>)}
+          <div className="divide-y divide-[#E0CEBF]">{results.map((item,index)=><Link href={item.href} key={item.id} className="group block px-5 py-4 transition hover:bg-[#F0E3D6]"><div className="flex items-start gap-3"><div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#fff3eb] text-[#e85a1b]"><BookOpenCheck size={16}/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="text-[11px] font-semibold text-[#2b4338] group-hover:text-[#ff5a00]">{item.title}</h3><span className="rounded-full bg-[#fff0e7] px-2 py-0.5 text-[8px] font-semibold text-[#d94c0b]">Aprobată</span></div><p className="mt-1.5 text-[10px] leading-5 text-[#788a80]">{item.match?item.match.reason:"Verifică seria asociată punctului de lucru, apoi reîncearcă emiterea. Dacă problema persistă, urmează pasul de escaladare."}</p><div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-[#96a29b]"><span>{item.context}</span>{item.match&&<><span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span>{relevanceLabel[item.match.relevance]}</span></>}<span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span>{item.sources} surse</span><span className="h-1 w-1 rounded-full bg-[#c5d0ca]"/><span className="inline-flex items-center gap-1 text-[#c95418]"><ShieldCheck size={10}/>{item.confidence}% confirmată</span></div></div><ArrowUpRight size={14} className="mt-1 shrink-0 text-[#aab6af] group-hover:text-[#f05b13]"/></div></Link>)}
           {results.length===0&&!loading&&<div className="px-6 py-12 text-center"><div className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-[#E8D9CA] text-[#89978f]"><Search size={17}/></div><p className="mt-3 text-[11px] font-semibold text-[#53685d]">Nu am găsit o potrivire sigură.</p><p className="mt-1 text-[10px] text-[#89978f]">Încearcă altă formulare sau cere ajutorul echipei.</p></div>}</div>
           {results.length>0&&<div className="border-t border-[#DDCABB] px-5 py-3 text-[9px] text-[#97a49c]">{aiResult?"Potrivire făcută de AI pe procedurile aprobate; lista de proceduri este încă demonstrativă.":"Rezultatele din acest prototip folosesc date demonstrative."}</div>}
         </section>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { ApprovalBox } from "@/components/approval-box";
 import { deleteMeeting, generateMeetingDraft, getFirefliesStatus, getMeeting, listMeetingDrafts, syncFireflies, type ClaimStatus, type FirefliesStatus, type Meeting, type MeetingDraft, type MeetingSentence } from "@/lib/api";
 import { ChevronDown, ChevronUp, CircleHelp, Clock3, ExternalLink, ListChecks, Loader2, RefreshCw, ShieldCheck, Sparkles, Tag, Trash2, Users, Video, X } from "lucide-react";
 
@@ -215,7 +216,7 @@ export default function MeetingsPage() {
                 {open === m.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{open === m.id ? "Ascunde transcrierea" : "Vezi transcrierea"}
               </button>
             </div>
-            {open === m.id && drafts[m.id] && <DraftView draft={drafts[m.id]!} sentences={transcripts[m.id] ?? []} />}
+            {open === m.id && drafts[m.id] && <DraftView meetingId={m.id} draft={drafts[m.id]!} sentences={transcripts[m.id] ?? []} />}
             {open === m.id && <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto rounded-xl border border-[#DDCABB] bg-[#F3E7DB] p-3">
               {!transcripts[m.id] && <div className="text-[10px] text-[#86756a]">Se încarcă…</div>}
               {transcripts[m.id]?.map((s) => <div key={s.idx} className="text-[10px] leading-5 text-[#4a3324]">
@@ -232,7 +233,7 @@ export default function MeetingsPage() {
   </AppShell>;
 }
 
-function DraftView({ draft: stored, sentences }: { draft: MeetingDraft; sentences: MeetingSentence[] }) {
+function DraftView({ meetingId, draft: stored, sentences }: { meetingId: string; draft: MeetingDraft; sentences: MeetingSentence[] }) {
   const d = stored.draft;
   // Draft evidence seq N points to the N-th transcript line sent to the AI.
   const quote = (seq: number) => sentences[seq - 1];
@@ -266,6 +267,7 @@ function DraftView({ draft: stored, sentences }: { draft: MeetingDraft; sentence
       <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[#9a7a3a]"><CircleHelp size={12} />De clarificat</div>
       <ul className="mt-1.5 space-y-1 text-[10px] leading-5 text-[#5b4637]">{d.uncertainties.map((u, i) => <li key={i}>• {u.question}</li>)}</ul>
     </div>}
-    <p className="mt-3 text-[9px] leading-4 text-[#8a7a6e]">Pașii vin din ce s-a spus în ședință, deci sunt cel mult „Deducție AI” până îi confirmă cineva în Revizuire.</p>
+    <p className="mt-3 text-[9px] leading-4 text-[#8a7a6e]">Pașii vin din ce s-a spus în ședință, deci sunt cel mult „Deducție AI” până îi confirmă cineva.</p>
+    <ApprovalBox key={`${meetingId}:${stored.created_at}`} draft={d} sourceType={meetingId.startsWith("teams-") ? "teams" : "meeting"} sourceId={meetingId} groundingScore={stored.quality?.grounding_score ?? null} />
   </div>;
 }

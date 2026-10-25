@@ -194,3 +194,36 @@ export function analyzeTeamsConversation(text: string, ticketId?: string): Promi
 export async function listSessionEvents(sessionId: string): Promise<StoredEvent[]> {
   return (await request<{ events: StoredEvent[] }>(`/api/events?sessionId=${encodeURIComponent(sessionId)}`)).events;
 }
+
+export type ApprovedProcedure = {
+  id: string;
+  title: string;
+  summary: string;
+  ticket_id: string | null;
+  source_type: "capture" | "meeting" | "teams";
+  source_id: string;
+  steps: { order: number; instruction: string; status: ClaimStatus; reason: string; evidence_seq: number[]; confirmed_by: string; confirmed_at: string }[];
+  outcome: string | null;
+  grounding_score: number | null;
+  approved_by: string;
+  approved_at: string;
+};
+
+export async function approveProcedure(input: {
+  draft: ProcedureDraft;
+  sourceType: ApprovedProcedure["source_type"];
+  sourceId: string;
+  approvedBy: string;
+  keepOrders: number[];
+  groundingScore: number | null;
+}): Promise<ApprovedProcedure> {
+  return (await request<{ procedure: ApprovedProcedure }>("/api/procedures", { method: "POST", body: JSON.stringify(input) })).procedure;
+}
+
+export async function listApprovedProcedures(): Promise<ApprovedProcedure[]> {
+  return (await request<{ procedures: ApprovedProcedure[] }>("/api/procedures")).procedures;
+}
+
+export async function getApprovedProcedure(id: string): Promise<ApprovedProcedure> {
+  return (await request<{ procedure: ApprovedProcedure }>(`/api/procedures/${encodeURIComponent(id)}`)).procedure;
+}
