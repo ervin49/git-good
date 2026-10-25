@@ -49,8 +49,16 @@ function formatTime(iso: string) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("ro-RO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+const SESSIONS_POLL_MS = 10_000;
+
+// Remounts the panel whenever ?sessionId changes (e.g. clicking a "capture finished" notification
+// while already on /review), so it shows that session instead of the previous one.
 export function LiveDraftPanel() {
   const requestedSession = useSearchParams().get("sessionId") ?? "";
+  return <SessionDraftPanel key={requestedSession} requestedSession={requestedSession} />;
+}
+
+function SessionDraftPanel({ requestedSession }: { requestedSession: string }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selected, setSelected] = useState(requestedSession);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -73,20 +81,48 @@ export function LiveDraftPanel() {
     return () => { cancelled = true; };
   }, [selected, sessions]);
 
+  const autoDraftDone = useRef(false);
+
+  const runDraft = useCallback(async (sessionId: string) => {
+    if (!sessionId) return;
+    const id = ++draftRequest.current;
+    setGenerating(true);
+    setDraftError("");
+    setResult(null);
+    try {
+      const response = await generateDraft(sessionId);
+      if (id === draftRequest.current) setResult(response);
+    } catch (error) {
+      if (id === draftRequest.current) setDraftError(error instanceof Error ? error.message : "Generarea ciornei a eșuat.");
+    } finally {
+      if (id === draftRequest.current) setGenerating(false);
+    }
+  }, []);
+
   const loadSessions = useCallback(() => listSessions().then(
     (list) => {
       setSessions(list);
       setSessionsError("");
       setSelected((current) => (list.some((session) => session.sessionId === current) ? current : list[0]?.sessionId ?? ""));
       setLoadingSessions(false);
+      // Opened from a notification: generate the procedure right away, once.
+      if (requestedSession && !autoDraftDone.current && list.some((session) => session.sessionId === requestedSession)) {
+        autoDraftDone.current = true;
+        void runDraft(requestedSession);
+      }
     },
     (error: unknown) => {
       setSessionsError(error instanceof Error ? error.message : "Nu am putut încărca sesiunile.");
       setLoadingSessions(false);
     },
-  ), []);
+  ), [requestedSession, runDraft]);
 
-  useEffect(() => { void loadSessions(); }, [loadSessions]);
+  useEffect(() => {
+    void loadSessions();
+    // New captures show up without pressing "Reîmprospătează".
+    const timer = window.setInterval(() => void loadSessions(), SESSIONS_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [loadSessions]);
 
   const refresh = () => {
     setLoadingSessions(true);
@@ -102,21 +138,6 @@ export function LiveDraftPanel() {
     setGenerating(false);
   };
 
-  const runDraft = async () => {
-    if (!selected) return;
-    const id = ++draftRequest.current;
-    setGenerating(true);
-    setDraftError("");
-    setResult(null);
-    try {
-      const response = await generateDraft(selected);
-      if (id === draftRequest.current) setResult(response);
-    } catch (error) {
-      if (id === draftRequest.current) setDraftError(error instanceof Error ? error.message : "Generarea ciornei a eșuat.");
-    } finally {
-      if (id === draftRequest.current) setGenerating(false);
-    }
-  };
 
   const draft = result?.draft;
 
@@ -132,7 +153,7 @@ export function LiveDraftPanel() {
         <select aria-label="Sesiune capturată" value={selected} onChange={(event) => selectSession(event.target.value)} className="h-10 min-w-0 flex-1 rounded-xl border border-[#D9C3AF] bg-[#F0E3D6] px-3 font-mono text-[10px] text-[#455a4f] outline-none focus:border-[#ff9a63]">
           {sessions.map((session) => <option key={session.sessionId} value={session.sessionId}>{session.sessionId} · {session.eventCount} evenimente · {formatTime(session.lastAt)}</option>)}
         </select>
-        <button onClick={() => void runDraft()} disabled={!selected || generating} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#ff5a00] px-4 text-[10px] font-semibold text-[#29170e] transition hover:bg-[#e94c00] disabled:opacity-60"><Sparkles size={13} />{generating ? "Se generează…" : "Generează ciornă AI"}</button>
+        <button onClick={() => void runDraft(selected)} disabled={!selected || generating} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#ff5a00] px-4 text-[10px] font-semibold text-[#29170e] transition hover:bg-[#e94c00] disabled:opacity-60"><Sparkles size={13} />{generating ? "Se generează…" : "Generează ciornă AI"}</button>
       </div>}
       {requestedSession && !loadingSessions && !sessionsError && !sessions.some((session) => session.sessionId === requestedSession) && <p className="mt-2 text-[9px] text-[#a07836]">Sesiunea <span className="font-mono">{requestedSession}</span> nu are evenimente în backend.</p>}
       {captured.length > 0 && <div className="mt-4 rounded-xl border border-[#DDCABB] bg-[#F0E3D6] px-3 py-3">
