@@ -3,7 +3,7 @@
 importScripts('masking.js', 'allowlist.js');
 
 const { scrubText, scrubUrl, POLICY } = self.GGMask;
-const { normalizeList, urlAllowed, matchPatterns } = self.GGAllowlist;
+const { normalizeList, urlAllowed, matchPatterns, isOwnApp } = self.GGAllowlist;
 
 const SCRIPT_ID = 'gg-capture';
 const AGENT_NAME = 'gitgood-capture';
@@ -223,7 +223,7 @@ function ensureAutoSession(tabUrl, tab) {
   autoStarting = (autoStarting || Promise.resolve()).then(async () => {
     const settings = await getSettings();
     if (!settings.autoCapture || !settings.allowlist.length) return;
-    if (tabUrl && !urlAllowed(tabUrl, settings.allowlist)) return;
+    if (tabUrl && (!urlAllowed(tabUrl, settings.allowlist) || isOwnApp(tabUrl, settings))) return;
     const { activeSession } = await chrome.storage.local.get('activeSession');
     if (activeSession) {
       // Alarma poate fi ratată (browser închis); o sesiune automată veche se închide aici.
@@ -241,7 +241,7 @@ function ensureAutoSession(tabUrl, tab) {
 // Primul tab deschis pe un domeniu permis (pentru ID-ul tichetului la pornirea din setări).
 async function firstAllowedTab(settings) {
   const tabs = await chrome.tabs.query({});
-  return tabs.find((t) => t.url && urlAllowed(t.url, settings.allowlist)) || null;
+  return tabs.find((t) => t.url && urlAllowed(t.url, settings.allowlist) && !isOwnApp(t.url, settings)) || null;
 }
 
 // POST imediat la pornire, ca backend-ul să afle de sesiune înainte de primul pas.
@@ -359,6 +359,7 @@ function sanitizeStep(raw, tabUrl) {
 async function recordStep(raw, sender) {
   const tabUrl = sender.tab && sender.tab.url;
   if (!tabUrl || sender.frameId !== 0) return { ok: false };
+  if (isOwnApp(tabUrl, await getSettings())) return { ok: false };
   await ensureAutoSession(tabUrl, sender.tab);
   const result = await serial(async () => {
     const { activeSession } = await chrome.storage.local.get('activeSession');

@@ -51,7 +51,21 @@
     return ['*://' + entry + '/*', '*://*.' + entry + '/*'];
   }
 
-  const api = { normalizeEntry, normalizeList, hostAllowed, urlAllowed, matchPatterns };
+  // Helpy itself (the upload endpoint's or the dashboard's origin) is never captured, even when its
+  // host is in the allowlist (e.g. "localhost" for both Helpy and a demo app on another port).
+  function appOrigins(settings) {
+    const out = [];
+    for (const u of [settings && settings.endpoint, settings && settings.dashboardUrl]) {
+      try { if (u) out.push(new URL(String(u).replace('{sessionId}', 'x')).origin); } catch (_) { /* URL invalid */ }
+    }
+    return out;
+  }
+
+  function isOwnApp(url, settings) {
+    try { return appOrigins(settings).includes(new URL(url).origin); } catch (_) { return false; }
+  }
+
+  const api = { normalizeEntry, normalizeList, hostAllowed, urlAllowed, matchPatterns, isOwnApp };
   root.GGAllowlist = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

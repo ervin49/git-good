@@ -10,7 +10,7 @@
   window.__ggCaptureAlive = () => !!(chrome.runtime && chrome.runtime.id);
 
   const { scrubText, scrubUrl, maskFieldValue } = globalThis.GGMask;
-  const { hostAllowed } = globalThis.GGAllowlist;
+  const { hostAllowed, isOwnApp } = globalThis.GGAllowlist;
 
   let settings = { allowlist: [], valueCapture: 'masked', extraSelectors: [] };
   let session = null;
@@ -18,12 +18,12 @@
   let indicator = null;
 
   function recording() {
-    return !!session && session.status === 'active' && hostAllowed(location.hostname, settings.allowlist);
+    return !!session && session.status === 'active' && hostAllowed(location.hostname, settings.allowlist) && !isOwnApp(location.href, settings);
   }
 
   // Cu captura automată, primul pas pe un domeniu permis pornește sesiunea din service worker.
   function active() {
-    return recording() || (settings.autoCapture === true && hostAllowed(location.hostname, settings.allowlist));
+    return recording() || (settings.autoCapture === true && hostAllowed(location.hostname, settings.allowlist) && !isOwnApp(location.href, settings));
   }
 
   function clip(s, n) {

@@ -190,3 +190,7 @@ export type TeamsAnalysis = MeetingDraft & {
 export function analyzeTeamsConversation(text: string, ticketId?: string): Promise<TeamsAnalysis> {
   return request<TeamsAnalysis>("/api/teams/analyze", { method: "POST", body: JSON.stringify({ text, ticketId }) });
 }
+
+export async function listSessionEvents(sessionId: string): Promise<StoredEvent[]> {
+  return (await request<{ events: StoredEvent[] }>(`/api/events?sessionId=${encodeURIComponent(sessionId)}`)).events;
+}

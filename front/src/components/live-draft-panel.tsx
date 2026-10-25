@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CircleAlert, Radio, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
-import { generateDraft, listSessions, type ClaimStatus, type DraftClaim, type DraftResponse, type SessionSummary } from "@/lib/api";
+import { ChevronDown, ChevronUp, CircleAlert, MousePointerClick, Radio, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { generateDraft, listSessionEvents, listSessions, type ClaimStatus, type DraftClaim, type DraftResponse, type SessionSummary, type StoredEvent } from "@/lib/api";
 
 const statusStyles: Record<ClaimStatus, string> = {
   "Deducție AI": "bg-[#f0edfa] text-[#7263a5]",
@@ -18,13 +18,30 @@ function StatusPill({ status }: { status: ClaimStatus }) {
   return <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold ${statusStyles[status] ?? statusStyles.Neconfirmat}`}><span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />{status}</span>;
 }
 
-function evidenceLabel(seqs: number[]) {
-  return seqs.length ? `Evenimente #${seqs.join(", #")}` : "Fără eveniment citat";
+type CapturedStep = { seq: number; label: string; detail: string };
+
+// Readable view of one captured event (the extension's step description, masked value, page).
+function toCapturedStep(entry: StoredEvent, index: number): CapturedStep {
+  const e = (entry.event ?? {}) as Record<string, unknown>;
+  const meta = (e.metadata ?? {}) as Record<string, unknown>;
+  const app = (e.app ?? {}) as Record<string, unknown>;
+  const label = String(meta.label ?? e.description ?? e.actionType ?? e.type ?? "Acțiune");
+  const value = typeof e.value === "string" && e.value && e.value !== "[OMITTED]" ? `valoare: ${e.value}` : "";
+  const page = typeof app.title === "string" ? app.title : typeof app.domain === "string" ? app.domain : "";
+  return { seq: index + 1, label, detail: [page, value].filter(Boolean).join(" · ") };
 }
 
-function ClaimList({ title, items }: { title: string; items: DraftClaim[] }) {
+function evidenceLabel(seqs: number[], steps: CapturedStep[]) {
+  if (!seqs.length) return "Fără eveniment citat";
+  return "Sursă: " + seqs.map((seq) => {
+    const step = steps[seq - 1];
+    return step ? `#${seq} ${step.label}` : `#${seq}`;
+  }).join(" · ");
+}
+
+function ClaimList({ title, items, steps }: { title: string; items: DraftClaim[]; steps: CapturedStep[] }) {
   if (items.length === 0) return null;
-  return <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">{title}</div><ul className="mt-2 space-y-2">{items.map((item, index) => <li key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-[#F0E3D6] px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-[10px] leading-5 text-[#443026]">{item.text}</p><div className="mt-1 text-[9px] text-[#95a19b]">{evidenceLabel(item.evidence_seq)}</div></div><StatusPill status={item.status} /></li>)}</ul></div>;
+  return <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">{title}</div><ul className="mt-2 space-y-2">{items.map((item, index) => <li key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-[#F0E3D6] px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-[10px] leading-5 text-[#443026]">{item.text}</p><div className="mt-1 text-[9px] text-[#95a19b]">{evidenceLabel(item.evidence_seq, steps)}</div></div><StatusPill status={item.status} /></li>)}</ul></div>;
 }
 
 function formatTime(iso: string) {
@@ -42,6 +59,19 @@ export function LiveDraftPanel() {
   const [draftError, setDraftError] = useState("");
   const [result, setResult] = useState<DraftResponse | null>(null);
   const draftRequest = useRef(0);
+  const [captured, setCaptured] = useState<CapturedStep[]>([]);
+  const [showAllCaptured, setShowAllCaptured] = useState(false);
+
+  // The captured steps of the selected session, shown even before (or without) an AI draft.
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    listSessionEvents(selected).then(
+      (events) => { if (!cancelled) setCaptured(events.slice(-1000).map(toCapturedStep)); },
+      () => { if (!cancelled) setCaptured([]); },
+    );
+    return () => { cancelled = true; };
+  }, [selected, sessions]);
 
   const loadSessions = useCallback(() => listSessions().then(
     (list) => {
@@ -105,6 +135,15 @@ export function LiveDraftPanel() {
         <button onClick={() => void runDraft()} disabled={!selected || generating} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#ff5a00] px-4 text-[10px] font-semibold text-[#29170e] transition hover:bg-[#e94c00] disabled:opacity-60"><Sparkles size={13} />{generating ? "Se generează…" : "Generează ciornă AI"}</button>
       </div>}
       {requestedSession && !loadingSessions && !sessionsError && !sessions.some((session) => session.sessionId === requestedSession) && <p className="mt-2 text-[9px] text-[#a07836]">Sesiunea <span className="font-mono">{requestedSession}</span> nu are evenimente în backend.</p>}
+      {captured.length > 0 && <div className="mt-4 rounded-xl border border-[#DDCABB] bg-[#F0E3D6] px-3 py-3">
+        <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]"><MousePointerClick size={12} />Pași capturați de extensie ({captured.length})</div>
+        <ol className="mt-2 space-y-1.5">{(showAllCaptured ? captured : captured.slice(0, 8)).map((step) => <li key={step.seq} className="flex gap-2.5 text-[10px] leading-5 text-[#443026]">
+          <span className="w-6 shrink-0 text-right font-mono text-[9px] leading-5 text-[#a08a7a]">#{step.seq}</span>
+          <div className="min-w-0 flex-1"><span className="font-medium">{step.label}</span>{step.detail && <span className="text-[9px] text-[#8a7a6e]"> · {step.detail}</span>}</div>
+          <StatusPill status="Observat" />
+        </li>)}</ol>
+        {captured.length > 8 && <button onClick={() => setShowAllCaptured((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#db4b00] hover:text-[#b83d00]">{showAllCaptured ? <ChevronUp size={12} /> : <ChevronDown size={12} />}{showAllCaptured ? "Arată mai puțini" : `Arată toți cei ${captured.length} pași`}</button>}
+      </div>}
       {draftError && <div className="mt-4 flex items-start gap-2 rounded-xl border border-[#f0dfbd] bg-[#fff9eb] px-3 py-2.5 text-[10px] text-[#775a2a]"><CircleAlert size={14} className="mt-0.5 shrink-0" />{draftError}</div>}
 
       {draft && result && <div className="mt-5 border-t border-[#DDCABB] pt-5">
@@ -113,12 +152,12 @@ export function LiveDraftPanel() {
         <p className="mt-2 text-[11px] leading-5 text-[#5f5046]">{draft.session_summary}</p>
         {!draft.sufficient_evidence && <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#f0dfbd] bg-[#fff9eb] px-3 py-2.5 text-[10px] text-[#775a2a]"><CircleAlert size={14} className="mt-0.5 shrink-0" />Dovezile nu sunt suficiente pentru o procedură completă.</div>}
 
-        <ClaimList title="Aplicabilitate" items={draft.applicability} />
-        <ClaimList title="Precondiții" items={draft.prerequisites} />
-        {draft.steps.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Pași</div><div className="mt-2 space-y-1">{draft.steps.map((step, index) => <div key={index} className="flex gap-3 rounded-xl px-2 py-3 transition hover:bg-[#F0E3D6]"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#f1f4f2] text-[10px] font-semibold text-[#72837a]">{step.order || index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-medium leading-5 text-[#443026]">{step.instruction}</p><StatusPill status={step.status} /></div><div className="mt-1.5 text-[9px] text-[#95a19b]">{evidenceLabel(step.evidence_seq)}{step.reason ? ` · ${step.reason}` : ""}</div></div></div>)}</div></div>}
-        <ClaimList title="Condiții" items={draft.conditions} />
-        <ClaimList title="Excepții" items={draft.exceptions} />
-        {draft.outcome && <ClaimList title="Rezultat" items={[draft.outcome]} />}
+        <ClaimList steps={captured} title="Aplicabilitate" items={draft.applicability} />
+        <ClaimList steps={captured} title="Precondiții" items={draft.prerequisites} />
+        {draft.steps.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Pași</div><div className="mt-2 space-y-1">{draft.steps.map((step, index) => <div key={index} className="flex gap-3 rounded-xl px-2 py-3 transition hover:bg-[#F0E3D6]"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#f1f4f2] text-[10px] font-semibold text-[#72837a]">{step.order || index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-medium leading-5 text-[#443026]">{step.instruction}</p><StatusPill status={step.status} /></div><div className="mt-1.5 text-[9px] text-[#95a19b]">{evidenceLabel(step.evidence_seq, captured)}{step.reason ? ` · ${step.reason}` : ""}</div></div></div>)}</div></div>}
+        <ClaimList steps={captured} title="Condiții" items={draft.conditions} />
+        <ClaimList steps={captured} title="Excepții" items={draft.exceptions} />
+        {draft.outcome && <ClaimList steps={captured} title="Rezultat" items={[draft.outcome]} />}
         {draft.uncertainties.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Întrebări deschise</div><ul className="mt-2 space-y-2">{draft.uncertainties.map((item, index) => <li key={index} className="rounded-xl border border-[#f0e5cf] bg-[#fffaf0] px-3 py-2.5"><p className="text-[10px] font-semibold text-[#795f35]">{item.question}</p><p className="mt-1 text-[9px] leading-4 text-[#927b52]">{item.reason}</p></li>)}</ul></div>}
         {draft.missing_information.length > 0 && <div className="mt-4"><div className="text-[9px] font-bold uppercase tracking-[.08em] text-[#708279]">Informații lipsă</div><ul className="mt-2 list-disc space-y-1 pl-5 text-[10px] leading-5 text-[#77877f]">{draft.missing_information.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
         <p className="mt-5 text-[9px] leading-4 text-[#9aa69f]">AI-ul nu poate marca nimic drept „Confirmat”; fiecare pas trebuie validat de o persoană.</p>
