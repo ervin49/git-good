@@ -1,10 +1,13 @@
 // SQLite database (Node's built-in node:sqlite, no extra dependency). The file lives in
 // backend/data/ by default; override with DATABASE_PATH.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const dbPath = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "gitgood.db");
+// On Vercel only /tmp is writable (and it is per-instance and ephemeral), so data does not persist there.
+const defaultDir = process.env.VERCEL ? os.tmpdir() : path.join(process.cwd(), "data");
+const dbPath = process.env.DATABASE_PATH ?? path.join(defaultDir, "gitgood.db");
 
 function open(): DatabaseSync {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
