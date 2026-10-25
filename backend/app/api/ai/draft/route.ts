@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     input = directCapture;
     knownEvents = steps;
   } else {
-    const stored = listEvents(sessionId);
+    const stored = await listEvents(sessionId);
     if (stored.length === 0) {
       return NextResponse.json({ error: "session not found or has no events" }, { status: 404 });
     }
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     const quality = evaluateDraft(draft, knownEvents);
     const draftSession = sessionId || (directCapture && isRecord(directCapture.session) && typeof directCapture.session.id === "string" ? directCapture.session.id : "");
     if (draftSession) {
-      notify({
+      await notify({
         id: `draft:capture:${draftSession}`,
         kind: "draft",
         title: `Ciornă de procedură generată: ${draft.title.slice(0, 100)}`,

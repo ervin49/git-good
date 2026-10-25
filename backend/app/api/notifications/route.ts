@@ -4,18 +4,18 @@ import { clearNotifications, listNotifications, markRead } from "@/app/lib/notif
 // GET: latest notifications + unread count (the bell in the frontend header polls this).
 export async function GET() {
   await connection();
-  return NextResponse.json(listNotifications());
+  return NextResponse.json(await listNotifications());
 }
 
 // POST { id? }: mark one notification (or, without id, all of them) as read.
 export async function POST(request: NextRequest) {
   const body = ((await request.json().catch(() => null)) ?? {}) as { id?: unknown };
-  markRead(typeof body.id === "string" ? body.id : undefined);
-  return NextResponse.json(listNotifications());
+  await markRead(typeof body.id === "string" ? body.id : undefined);
+  return NextResponse.json(await listNotifications());
 }
 
 // DELETE: remove all notifications.
 export async function DELETE() {
-  clearNotifications();
-  return NextResponse.json(listNotifications());
+  await clearNotifications();
+  return NextResponse.json(await listNotifications());
 }

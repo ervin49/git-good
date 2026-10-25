@@ -1,7 +1,7 @@
 // Fireflies.ai import: pulls meeting transcripts through the GraphQL API, redacts them and keeps only
 // meetings tied to a ticket (unless told otherwise). The API key stays server-side (FIREFLIES_API_KEY).
 // Docs: https://docs.fireflies.ai/graphql-api/query/transcripts
-import { db } from "@/app/lib/db";
+import { all, batch, get, run, type Statement } from "@/app/lib/db";
 import { notify } from "@/app/lib/notifications";
 import { redactDeep } from "@/app/lib/redact";
 
@@ -96,37 +96,6 @@ export class FirefliesError extends Error {
   }
 }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS meetings (
-    id                TEXT PRIMARY KEY,
-    source            TEXT NOT NULL DEFAULT 'fireflies',
-    title             TEXT NOT NULL,
-    date              TEXT NOT NULL,
-    duration_min      REAL NOT NULL DEFAULT 0,
-    transcript_url    TEXT,
-    participant_count INTEGER NOT NULL DEFAULT 0,
-    ticket_ids        TEXT NOT NULL DEFAULT '[]',
-    overview          TEXT NOT NULL DEFAULT '',
-    action_items      TEXT NOT NULL DEFAULT '[]',
-    keywords          TEXT NOT NULL DEFAULT '[]',
-    synced_at         TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS meeting_sentences (
-    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-    idx        INTEGER NOT NULL,
-    speaker    TEXT NOT NULL,
-    text       TEXT NOT NULL,
-    start_s    REAL,
-    end_s      REAL,
-    PRIMARY KEY (meeting_id, idx)
-  );
-  CREATE TABLE IF NOT EXISTS integration_state (
-    name       TEXT PRIMARY KEY,
-    last_sync  TEXT,
-    last_error TEXT
-  );
-`);
-
 export function isConfigured(): boolean {
   return !!process.env.FIREFLIES_API_KEY;
 }
@@ -175,7 +144,7 @@ async function fetchPage(apiKey: string, variables: Record<string, unknown>): Pr
   return body.data?.transcripts ?? [];
 }
 
-const upsertMeeting = db.prepare(`
+const UPSERT_MEETING = `
   INSERT INTO meetings (id, title, date, duration_min, transcript_url, participant_count, ticket_ids, overview, action_items, keywords, synced_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
@@ -183,51 +152,47 @@ const upsertMeeting = db.prepare(`
     transcript_url = excluded.transcript_url, participant_count = excluded.participant_count,
     ticket_ids = excluded.ticket_ids, overview = excluded.overview, action_items = excluded.action_items,
     keywords = excluded.keywords, synced_at = excluded.synced_at
-`);
-const deleteSentences = db.prepare("DELETE FROM meeting_sentences WHERE meeting_id = ?");
-const insertSentence = db.prepare("INSERT INTO meeting_sentences (meeting_id, idx, speaker, text, start_s, end_s) VALUES (?, ?, ?, ?, ?, ?)");
+`;
 
-function store(t: FirefliesTranscript, ticketIds: string[], syncedAt: string): void {
+async function store(t: FirefliesTranscript, ticketIds: string[], syncedAt: string): Promise<void> {
   const sentences = (t.sentences ?? []).filter((s) => s.text);
   const date = t.dateString ?? (typeof t.date === "number" ? new Date(t.date).toISOString() : syncedAt);
-  db.exec("BEGIN");
-  try {
-    upsertMeeting.run(
-      t.id,
-      clean(t.title, 300) || "Ședință fără titlu",
-      date,
-      typeof t.duration === "number" ? t.duration : 0,
-      t.transcript_url ?? null,
-      // Participant emails are not stored, only how many there were.
-      Array.isArray(t.participants) ? t.participants.length : 0,
-      JSON.stringify(ticketIds),
-      clean(String(t.summary?.overview ?? "").replace(/\*\*|__/g, "")),
-      JSON.stringify(splitList(t.summary?.action_items)),
-      JSON.stringify(splitList(t.summary?.keywords)),
-      syncedAt,
-    );
-    deleteSentences.run(t.id);
-    sentences.slice(0, 5000).forEach((s, i) => {
-      insertSentence.run(t.id, s.index ?? i, clean(s.speaker_name, 120) || "Vorbitor", clean(s.text, 2000), toSeconds(s.start_time), toSeconds(s.end_time));
-    });
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  const statements: Statement[] = [
+    {
+      sql: UPSERT_MEETING,
+      args: [
+        t.id,
+        clean(t.title, 300) || "Ședință fără titlu",
+        date,
+        typeof t.duration === "number" ? t.duration : 0,
+        t.transcript_url ?? null,
+        // Participant emails are not stored, only how many there were.
+        Array.isArray(t.participants) ? t.participants.length : 0,
+        JSON.stringify(ticketIds),
+        clean(String(t.summary?.overview ?? "").replace(/\*\*|__/g, "")),
+        JSON.stringify(splitList(t.summary?.action_items)),
+        JSON.stringify(splitList(t.summary?.keywords)),
+        syncedAt,
+      ],
+    },
+    { sql: "DELETE FROM meeting_sentences WHERE meeting_id = ?", args: [t.id] },
+    ...sentences.slice(0, 5000).map((s, i): Statement => ({
+      sql: "INSERT INTO meeting_sentences (meeting_id, idx, speaker, text, start_s, end_s) VALUES (?, ?, ?, ?, ?, ?)",
+      args: [t.id, s.index ?? i, clean(s.speaker_name, 120) || "Vorbitor", clean(s.text, 2000), toSeconds(s.start_time), toSeconds(s.end_time)],
+    })),
+  ];
+  await batch(statements);
 }
 
-function setState(lastSync: string | null, lastError: string | null): void {
-  db.prepare(`
+async function setState(lastSync: string | null, lastError: string | null): Promise<void> {
+  await run(`
     INSERT INTO integration_state (name, last_sync, last_error) VALUES ('fireflies', ?, ?)
     ON CONFLICT(name) DO UPDATE SET last_sync = COALESCE(excluded.last_sync, last_sync), last_error = excluded.last_error
-  `).run(lastSync, lastError);
+  `, [lastSync, lastError]);
 }
 
-export function getState(): { last_sync: string | null; last_error: string | null } {
-  const row = db.prepare("SELECT last_sync, last_error FROM integration_state WHERE name = 'fireflies'").get() as
-    | { last_sync: string | null; last_error: string | null }
-    | undefined;
+export async function getState(): Promise<{ last_sync: string | null; last_error: string | null }> {
+  const row = await get<{ last_sync: string | null; last_error: string | null }>("SELECT last_sync, last_error FROM integration_state WHERE name = 'fireflies'");
   return row ?? { last_sync: null, last_error: null };
 }
 
@@ -260,11 +225,11 @@ export async function syncFireflies(options: SyncOptions): Promise<SyncResult> {
           result.skippedNoTicket++;
           continue;
         }
-        const isNew = !db.prepare("SELECT 1 FROM meetings WHERE id = ?").get(t.id);
-        store(t, ticketIds, syncedAt);
+        const isNew = !(await get("SELECT 1 FROM meetings WHERE id = ?", [t.id]));
+        await store(t, ticketIds, syncedAt);
         storedIds.push(t.id);
         if (isNew) {
-          notify({
+          await notify({
             id: `meeting:${t.id}`,
             kind: "meeting",
             title: `Ședință nouă din Fireflies: ${clean(t.title, 120) || "fără titlu"}`,
@@ -277,13 +242,13 @@ export async function syncFireflies(options: SyncOptions): Promise<SyncResult> {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    setState(null, message);
-    notify({ id: "fireflies-error", kind: "error", title: "Importul din Fireflies a eșuat", body: message, href: "/meetings" }, true);
+    await setState(null, message);
+    await notify({ id: "fireflies-error", kind: "error", title: "Importul din Fireflies a eșuat", body: message, href: "/meetings" }, true);
     throw error;
   }
-  setState(syncedAt, null);
+  await setState(syncedAt, null);
   result.stored = storedIds.length;
-  result.meetings = listMeetings().filter((m) => storedIds.includes(m.id));
+  result.meetings = (await listMeetings()).filter((m) => storedIds.includes(m.id));
   return result;
 }
 
@@ -316,39 +281,26 @@ const SUMMARY_SQL = `
   FROM meetings m
 `;
 
-export function listMeetings(ticketId?: string): MeetingSummary[] {
-  const rows = db.prepare(`${SUMMARY_SQL} ORDER BY m.date DESC`).all() as unknown as MeetingRow[];
-  const all = rows.map(toSummary);
-  return ticketId ? all.filter((m) => m.ticket_ids.includes(ticketId)) : all;
+export async function listMeetings(ticketId?: string): Promise<MeetingSummary[]> {
+  const rows = await all<MeetingRow>(`${SUMMARY_SQL} ORDER BY m.date DESC`);
+  const meetings = rows.map(toSummary);
+  return ticketId ? meetings.filter((m) => m.ticket_ids.includes(ticketId)) : meetings;
 }
 
-export function getMeeting(id: string): (MeetingSummary & { sentences: MeetingSentence[] }) | null {
-  const row = db.prepare(`${SUMMARY_SQL} WHERE m.id = ?`).get(id) as unknown as MeetingRow | undefined;
+export async function getMeeting(id: string): Promise<(MeetingSummary & { sentences: MeetingSentence[] }) | null> {
+  const row = await get<MeetingRow>(`${SUMMARY_SQL} WHERE m.id = ?`, [id]);
   if (!row) return null;
-  const sentences = db
-    .prepare("SELECT idx, speaker, text, start_s, end_s FROM meeting_sentences WHERE meeting_id = ? ORDER BY idx")
-    .all(id) as unknown as MeetingSentence[];
+  const sentences = await all<MeetingSentence>("SELECT idx, speaker, text, start_s, end_s FROM meeting_sentences WHERE meeting_id = ? ORDER BY idx", [id]);
   return { ...toSummary(row), sentences };
 }
 
-export function deleteMeeting(id: string): boolean {
-  deleteSentences.run(id);
-  db.prepare("DELETE FROM meeting_drafts WHERE meeting_id = ?").run(id);
-  return db.prepare("DELETE FROM meetings WHERE id = ?").run(id).changes > 0;
+export async function deleteMeeting(id: string): Promise<boolean> {
+  await run("DELETE FROM meeting_sentences WHERE meeting_id = ?", [id]);
+  await run("DELETE FROM meeting_drafts WHERE meeting_id = ?", [id]);
+  return (await run("DELETE FROM meetings WHERE id = ?", [id])).changes > 0;
 }
 
 // ---------- meetings → procedure drafts ----------
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS meeting_drafts (
-    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-    ticket_id  TEXT NOT NULL DEFAULT '',
-    draft      TEXT NOT NULL,
-    quality    TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (meeting_id, ticket_id)
-  );
-`);
 
 // Shapes a meeting like a normalized capture (capture-session.v1) so ai/processor.mjs can turn it into
 // a cited, step-by-step procedure: each spoken line becomes one "utterance" step the draft can cite.
@@ -387,17 +339,17 @@ export interface StoredDraft {
   created_at: string;
 }
 
-export function saveDraft(meetingId: string, ticketId: string | null, draft: unknown, quality: unknown): StoredDraft {
+export async function saveDraft(meetingId: string, ticketId: string | null, draft: unknown, quality: unknown): Promise<StoredDraft> {
   const row = { ticket_id: ticketId ?? "", draft, quality, created_at: new Date().toISOString() };
-  db.prepare(`
+  await run(`
     INSERT INTO meeting_drafts (meeting_id, ticket_id, draft, quality, created_at) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(meeting_id, ticket_id) DO UPDATE SET draft = excluded.draft, quality = excluded.quality, created_at = excluded.created_at
-  `).run(meetingId, row.ticket_id, JSON.stringify(draft), JSON.stringify(quality), row.created_at);
+  `, [meetingId, row.ticket_id, JSON.stringify(draft), JSON.stringify(quality), row.created_at]);
   return row;
 }
 
-export function listDrafts(meetingId: string): StoredDraft[] {
-  const rows = db.prepare("SELECT ticket_id, draft, quality, created_at FROM meeting_drafts WHERE meeting_id = ? ORDER BY created_at DESC")
-    .all(meetingId) as unknown as { ticket_id: string; draft: string; quality: string; created_at: string }[];
+export async function listDrafts(meetingId: string): Promise<StoredDraft[]> {
+  const rows = await all<{ ticket_id: string; draft: string; quality: string; created_at: string }>(
+    "SELECT ticket_id, draft, quality, created_at FROM meeting_drafts WHERE meeting_id = ? ORDER BY created_at DESC", [meetingId]);
   return rows.map((r) => ({ ...r, draft: JSON.parse(r.draft), quality: JSON.parse(r.quality) }));
 }

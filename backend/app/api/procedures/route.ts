@@ -5,7 +5,7 @@ import { approveProcedure, listProcedures, type SourceType } from "@/app/lib/pro
 // GET: procedures approved by a person (the library and search read these).
 export async function GET() {
   await connection();
-  return NextResponse.json({ procedures: listProcedures() });
+  return NextResponse.json({ procedures: await listProcedures() });
 }
 
 interface ApproveBody {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (!draft || !Array.isArray(draft.steps)) return NextResponse.json({ error: "Lipsește ciorna de aprobat." }, { status: 400 });
   const sourceType = SOURCES.includes(body.sourceType as SourceType) ? (body.sourceType as SourceType) : "capture";
   try {
-    const procedure = approveProcedure({
+    const procedure = await approveProcedure({
       sourceType,
       sourceId: typeof body.sourceId === "string" ? body.sourceId : "",
       approvedBy: typeof body.approvedBy === "string" ? body.approvedBy : "",
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       outcome: draft.outcome?.text,
       groundingScore: body.groundingScore,
     });
-    notify({
+    await notify({
       id: `approved:${procedure.id}`,
       kind: "draft",
       title: `Procedură aprobată: ${procedure.title.slice(0, 100)}`,

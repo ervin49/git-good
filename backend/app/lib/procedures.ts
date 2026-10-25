@@ -2,7 +2,7 @@
 // stay "Deducție AI"/"Observat" until someone approves them here.
 import { randomUUID } from "node:crypto";
 import { confirmClaim } from "../../../ai/processor.mjs";
-import { db } from "@/app/lib/db";
+import { all, get, run } from "@/app/lib/db";
 import { redactDeep } from "@/app/lib/redact";
 
 export type SourceType = "capture" | "meeting" | "teams";
@@ -31,22 +31,6 @@ export interface ApprovedProcedure {
   approved_at: string;
 }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS procedures (
-    id              TEXT PRIMARY KEY,
-    title           TEXT NOT NULL,
-    summary         TEXT NOT NULL DEFAULT '',
-    ticket_id       TEXT,
-    source_type     TEXT NOT NULL,
-    source_id       TEXT NOT NULL,
-    steps           TEXT NOT NULL,
-    outcome         TEXT,
-    grounding_score REAL,
-    approved_by     TEXT NOT NULL,
-    approved_at     TEXT NOT NULL
-  );
-`);
-
 function str(value: unknown, max: number): string {
   return String(redactDeep(String(value ?? "").slice(0, max)) ?? "").trim();
 }
@@ -70,7 +54,7 @@ export interface ApproveInput {
   groundingScore: unknown;
 }
 
-export function approveProcedure(input: ApproveInput): ApprovedProcedure {
+export async function approveProcedure(input: ApproveInput): Promise<ApprovedProcedure> {
   const reviewer = str(input.approvedBy, 80);
   if (!reviewer) throw new Error("Scrie numele persoanei care aprobă.");
   const kept = input.steps
@@ -101,11 +85,11 @@ export function approveProcedure(input: ApproveInput): ApprovedProcedure {
     approved_by: reviewer,
     approved_at: new Date().toISOString(),
   };
-  db.prepare(`
+  await run(`
     INSERT INTO procedures (id, title, summary, ticket_id, source_type, source_id, steps, outcome, grounding_score, approved_by, approved_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(procedure.id, procedure.title, procedure.summary, procedure.ticket_id, procedure.source_type, procedure.source_id,
-    JSON.stringify(procedure.steps), procedure.outcome, procedure.grounding_score, procedure.approved_by, procedure.approved_at);
+  `, [procedure.id, procedure.title, procedure.summary, procedure.ticket_id, procedure.source_type, procedure.source_id,
+    JSON.stringify(procedure.steps), procedure.outcome, procedure.grounding_score, procedure.approved_by, procedure.approved_at]);
   return procedure;
 }
 
@@ -115,15 +99,15 @@ interface ProcedureRow extends Omit<ApprovedProcedure, "steps"> {
 
 const fromRow = (row: ProcedureRow): ApprovedProcedure => ({ ...row, steps: JSON.parse(row.steps) as ApprovedStep[] });
 
-export function listProcedures(): ApprovedProcedure[] {
-  return (db.prepare("SELECT * FROM procedures ORDER BY approved_at DESC").all() as unknown as ProcedureRow[]).map(fromRow);
+export async function listProcedures(): Promise<ApprovedProcedure[]> {
+  return (await all<ProcedureRow>("SELECT * FROM procedures ORDER BY approved_at DESC")).map(fromRow);
 }
 
-export function getProcedure(id: string): ApprovedProcedure | null {
-  const row = db.prepare("SELECT * FROM procedures WHERE id = ?").get(id) as unknown as ProcedureRow | undefined;
+export async function getProcedure(id: string): Promise<ApprovedProcedure | null> {
+  const row = await get<ProcedureRow>("SELECT * FROM procedures WHERE id = ?", [id]);
   return row ? fromRow(row) : null;
 }
 
-export function deleteProcedure(id: string): boolean {
-  return db.prepare("DELETE FROM procedures WHERE id = ?").run(id).changes > 0;
+export async function deleteProcedure(id: string): Promise<boolean> {
+  return (await run("DELETE FROM procedures WHERE id = ?", [id])).changes > 0;
 }

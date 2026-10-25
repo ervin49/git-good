@@ -25,15 +25,15 @@ export async function POST(request: NextRequest) {
   const ticketId = ticketIds[0] ?? null;
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : `Conversație Teams${ticketId ? ` – ${ticketId}` : ""}`;
 
-  const id = saveTeamsConversation(title, messages, ticketIds);
-  const meeting = getMeeting(id);
+  const id = await saveTeamsConversation(title, messages, ticketIds);
+  const meeting = await getMeeting(id);
   if (!meeting) return NextResponse.json({ error: "Conversația nu a putut fi salvată." }, { status: 500 });
   const capture = meetingToCapture(meeting, ticketId, `Conversație Teams – ${meeting.title}`);
   try {
     const draft = await generateProcedureDraft(capture);
     const quality = evaluateDraft(draft, capture.steps);
-    const stored = saveDraft(id, ticketId, draft, quality);
-    notify({
+    const stored = await saveDraft(id, ticketId, draft, quality);
+    await notify({
       id: `draft:meeting:${id}`,
       kind: "draft",
       title: `Procedură generată din conversația Teams${ticketId ? ` (${ticketId})` : ""}`,

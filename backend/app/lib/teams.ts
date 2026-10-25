@@ -1,7 +1,7 @@
 // Teams conversations pasted into Helpy: parsed into messages, redacted, stored like a meeting
 // (meetings.source = 'teams') so the same AI pipeline turns them into a cited procedure.
 import { randomUUID } from "node:crypto";
-import { db } from "@/app/lib/db";
+import { batch } from "@/app/lib/db";
 import { redactDeep } from "@/app/lib/redact";
 
 export interface TeamsMessage {
@@ -69,26 +69,24 @@ function toSeconds(time: string | null): number | null {
 }
 
 // Stores the conversation as a meeting with source 'teams'; returns its id.
-export function saveTeamsConversation(title: string, messages: TeamsMessage[], ticketIds: string[]): string {
+export async function saveTeamsConversation(title: string, messages: TeamsMessage[], ticketIds: string[]): Promise<string> {
   const id = `teams-${randomUUID()}`;
   const now = new Date().toISOString();
   const authors = new Set(messages.map((m) => m.author));
-  db.exec("BEGIN");
-  try {
-    db.prepare(`
-      INSERT INTO meetings (id, source, title, date, duration_min, transcript_url, participant_count, ticket_ids, overview, action_items, keywords, synced_at)
-      VALUES (?, 'teams', ?, ?, 0, NULL, ?, ?, '', '[]', '[]', ?)
-    `).run(id, clean(title).slice(0, 300) || "Conversație Teams", now, authors.size, JSON.stringify(ticketIds), now);
-    const insert = db.prepare("INSERT INTO meeting_sentences (meeting_id, idx, speaker, text, start_s, end_s) VALUES (?, ?, ?, ?, ?, NULL)");
-    const base = toSeconds(messages.find((m) => m.time)?.time ?? null) ?? 0;
-    messages.forEach((m, i) => {
+  const base = toSeconds(messages.find((m) => m.time)?.time ?? null) ?? 0;
+  await batch([
+    {
+      sql: `INSERT INTO meetings (id, source, title, date, duration_min, transcript_url, participant_count, ticket_ids, overview, action_items, keywords, synced_at)
+      VALUES (?, 'teams', ?, ?, 0, NULL, ?, ?, '', '[]', '[]', ?)`,
+      args: [id, clean(title).slice(0, 300) || "Conversație Teams", now, authors.size, JSON.stringify(ticketIds), now],
+    },
+    ...messages.map((m, i) => {
       const t = toSeconds(m.time);
-      insert.run(id, i, m.author, m.text, t === null ? null : Math.max(0, t - base));
-    });
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+      return {
+        sql: "INSERT INTO meeting_sentences (meeting_id, idx, speaker, text, start_s, end_s) VALUES (?, ?, ?, ?, ?, NULL)",
+        args: [id, i, m.author, m.text, t === null ? null : Math.max(0, t - base)],
+      };
+    }),
+  ]);
   return id;
 }

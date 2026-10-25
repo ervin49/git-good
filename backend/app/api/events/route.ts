@@ -28,14 +28,14 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as IncomingBatch;
   } catch {
-    logRequest({ at: new Date().toISOString(), method: "POST", status: 400, sessionId: null, eventCount: 0, error: "invalid JSON" });
+    await logRequest({ at: new Date().toISOString(), method: "POST", status: 400, sessionId: null, eventCount: 0, error: "invalid JSON" });
     return NextResponse.json({ error: "invalid JSON" }, { status: 400, headers: CORS_HEADERS });
   }
 
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
   const events = Array.isArray(body.events) ? body.events : null;
   if (!sessionId || !events) {
-    logRequest({
+    await logRequest({
       at: new Date().toISOString(),
       method: "POST",
       status: 400,
@@ -61,20 +61,20 @@ export async function POST(request: NextRequest) {
     origin,
     event: redactDeep(event, dropped),
   }));
-  addEvents(entries);
-  logRequest({ at: receivedAt, method: "POST", status: 200, sessionId, origin, eventCount: entries.length });
-  notifyCaptureBatch(sessionId, body.session, entries.map((entry) => entry.event));
+  await addEvents(entries);
+  await logRequest({ at: receivedAt, method: "POST", status: 200, sessionId, origin, eventCount: entries.length });
+  await notifyCaptureBatch(sessionId, body.session, entries.map((entry) => entry.event));
 
   return NextResponse.json({ ok: true, stored: entries.length }, { headers: CORS_HEADERS });
 }
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId") ?? undefined;
-  return NextResponse.json({ events: listEvents(sessionId), requests: listRequests() }, { headers: CORS_HEADERS });
+  return NextResponse.json({ events: await listEvents(sessionId), requests: await listRequests() }, { headers: CORS_HEADERS });
 }
 
 export async function DELETE() {
-  clearEvents();
-  logRequest({ at: new Date().toISOString(), method: "DELETE", status: 200, sessionId: null, eventCount: 0 });
+  await clearEvents();
+  await logRequest({ at: new Date().toISOString(), method: "DELETE", status: 200, sessionId: null, eventCount: 0 });
   return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
 }

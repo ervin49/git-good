@@ -5,13 +5,13 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Context) {
   await connection();
-  const procedure = getProcedure((await params).id);
+  const procedure = await getProcedure((await params).id);
   if (!procedure) return NextResponse.json({ error: "Procedura nu există." }, { status: 404 });
   return NextResponse.json({ procedure });
 }
 
 // DELETE: withdraw an approved procedure from the library.
 export async function DELETE(_request: Request, { params }: Context) {
-  if (!deleteProcedure((await params).id)) return NextResponse.json({ error: "Procedura nu există." }, { status: 404 });
+  if (!(await deleteProcedure((await params).id))) return NextResponse.json({ error: "Procedura nu există." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

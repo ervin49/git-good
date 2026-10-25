@@ -9,13 +9,13 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: NextRequest, { params }: Context) {
   await connection();
   const id = (await params).id;
-  if (!getMeeting(id)) return NextResponse.json({ error: "Ședința nu există." }, { status: 404 });
-  return NextResponse.json({ drafts: listDrafts(id) });
+  if (!(await getMeeting(id))) return NextResponse.json({ error: "Ședința nu există." }, { status: 404 });
+  return NextResponse.json({ drafts: await listDrafts(id) });
 }
 
 // POST { ticketId? }: turn the meeting transcript into a step-by-step procedure draft.
 export async function POST(request: NextRequest, { params }: Context) {
-  const meeting = getMeeting((await params).id);
+  const meeting = await getMeeting((await params).id);
   if (!meeting) return NextResponse.json({ error: "Ședința nu există." }, { status: 404 });
   if (meeting.sentences.length === 0) return NextResponse.json({ error: "Ședința nu are transcriere." }, { status: 400 });
   if (!aiConfigured()) return NextResponse.json({ error: "AI is not configured on the server" }, { status: 503 });
@@ -28,8 +28,8 @@ export async function POST(request: NextRequest, { params }: Context) {
   try {
     const draft = await generateProcedureDraft(capture);
     const quality = evaluateDraft(draft, capture.steps);
-    const stored = saveDraft(meeting.id, ticketId, draft, quality);
-    notify({
+    const stored = await saveDraft(meeting.id, ticketId, draft, quality);
+    await notify({
       id: `draft:meeting:${meeting.id}`,
       kind: "draft",
       title: `Procedură generată din ședința „${meeting.title.slice(0, 80)}”`,

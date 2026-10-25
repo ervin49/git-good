@@ -5,7 +5,7 @@ import { FirefliesError, getState, isConfigured, listMeetings, syncFireflies } f
 export async function GET(request: NextRequest) {
   await connection();
   const ticket = request.nextUrl.searchParams.get("ticket") ?? undefined;
-  return NextResponse.json({ configured: isConfigured(), ...getState(), meetings: listMeetings(ticket) });
+  return NextResponse.json({ configured: isConfigured(), ...(await getState()), meetings: await listMeetings(ticket) });
 }
 
 interface SyncBody {

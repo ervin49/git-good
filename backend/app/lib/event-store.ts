@@ -1,7 +1,6 @@
-// In-memory store for received live-sync batches. Suitable for a demo / hackathon:
-// data lives only as long as the dev server process. Swap for a database for
-// anything real. A module-level singleton is shared across route handlers in the
-// same server process.
+// Live-sync batches received from the capture extension and a debug log of write requests, kept in the
+// database so they survive restarts and are shared between serverless instances.
+import { all, batch, run } from "@/app/lib/db";
 
 export interface StoredEvent {
   receivedAt: string;
@@ -21,43 +20,61 @@ export interface RequestLogEntry {
   error?: string;
 }
 
-interface Store {
-  events: StoredEvent[];
-  requests?: RequestLogEntry[];
-}
-
 const MAX_EVENTS = 5000;
 const MAX_REQUESTS = 200;
 
-// Stash on globalThis so it survives module re-evaluation during dev HMR.
-const g = globalThis as unknown as { __nodEventStore?: Store };
-const store: Store = (g.__nodEventStore ??= { events: [] });
-
-export function addEvents(entries: StoredEvent[]): void {
-  store.events.push(...entries);
-  if (store.events.length > MAX_EVENTS) {
-    store.events.splice(0, store.events.length - MAX_EVENTS);
-  }
+export async function addEvents(entries: StoredEvent[]): Promise<void> {
+  if (!entries.length) return;
+  await batch([
+    ...entries.map((e) => ({
+      sql: "INSERT INTO capture_events (received_at, session_id, origin, event) VALUES (?, ?, ?, ?)",
+      args: [e.receivedAt, e.sessionId, e.origin ?? null, JSON.stringify(e.event ?? null)],
+    })),
+    { sql: "DELETE FROM capture_events WHERE id <= (SELECT MAX(id) FROM capture_events) - ?", args: [MAX_EVENTS] },
+  ]);
 }
 
-export function listEvents(sessionId?: string): StoredEvent[] {
-  const all = store.events;
-  return sessionId ? all.filter((e) => e.sessionId === sessionId) : all;
+export async function listEvents(sessionId?: string): Promise<StoredEvent[]> {
+  const rows = sessionId
+    ? await all<{ received_at: string; session_id: string; origin: string | null; event: string }>(
+        "SELECT received_at, session_id, origin, event FROM capture_events WHERE session_id = ? ORDER BY id", [sessionId])
+    : await all<{ received_at: string; session_id: string; origin: string | null; event: string }>(
+        "SELECT received_at, session_id, origin, event FROM capture_events ORDER BY id");
+  return rows.map((r) => ({
+    receivedAt: r.received_at,
+    sessionId: r.session_id,
+    ...(r.origin ? { origin: r.origin } : {}),
+    event: JSON.parse(r.event),
+  }));
 }
 
-export function clearEvents(): void {
-  store.events.length = 0;
+export async function clearEvents(): Promise<void> {
+  await run("DELETE FROM capture_events");
 }
 
-export function logRequest(entry: RequestLogEntry): void {
-  const requests = (store.requests ??= []);
-  requests.push(entry);
-  if (requests.length > MAX_REQUESTS) requests.splice(0, requests.length - MAX_REQUESTS);
+export async function logRequest(entry: RequestLogEntry): Promise<void> {
   const who = entry.sessionId ? ` session=${entry.sessionId.slice(0, 8)}` : "";
   const err = entry.error ? ` error=${entry.error}` : "";
   console.log(`[events] ${entry.method} ${entry.status}${who} events=${entry.eventCount} origin=${entry.origin ?? "-"}${err}`);
+  await batch([
+    {
+      sql: "INSERT INTO request_log (at, method, status, session_id, origin, event_count, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [entry.at, entry.method, entry.status, entry.sessionId, entry.origin ?? null, entry.eventCount, entry.error ?? null],
+    },
+    { sql: "DELETE FROM request_log WHERE id <= (SELECT MAX(id) FROM request_log) - ?", args: [MAX_REQUESTS] },
+  ]);
 }
 
-export function listRequests(): RequestLogEntry[] {
-  return store.requests ?? [];
+export async function listRequests(): Promise<RequestLogEntry[]> {
+  const rows = await all<{ at: string; method: string; status: number; session_id: string | null; origin: string | null; event_count: number; error: string | null }>(
+    "SELECT at, method, status, session_id, origin, event_count, error FROM request_log ORDER BY id");
+  return rows.map((r) => ({
+    at: r.at,
+    method: r.method,
+    status: r.status,
+    sessionId: r.session_id,
+    ...(r.origin ? { origin: r.origin } : {}),
+    eventCount: r.event_count,
+    ...(r.error ? { error: r.error } : {}),
+  }));
 }
